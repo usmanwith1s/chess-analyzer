@@ -1,0 +1,62 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    min-height: 100vh;
+    background: #101010;
+    color: white;
+    font-family: Arial, sans-serif;
+}
+
+.container {
+    width: min(900px, 92%);
+    margin: 60px auto;
+}
+
+h1 {
+    font-size: 42px;
+    margin-bottom: 10px;
+}
+
+p {
+    color: #aaa;
+    margin-bottom: 25px;
+}
+
+#pgn-input {
+    width: 100%;
+    min-height: 300px;
+    padding: 18px;
+
+    background: #181818;
+    color: white;
+
+    border: 1px solid #333;
+    border-radius: 12px;
+
+    resize: vertical;
+    font-family: monospace;
+    font-size: 14px;
+}
+
+#analyze-button {
+    margin-top: 15px;
+    padding: 14px 24px;
+
+    border: none;
+    border-radius: 10px;
+
+    background: #9cff00;
+    color: #000;
+
+    font-weight: bold;
+    cursor: pointer;
+}
+
+#result {
+    margin-top: 30px;
+    color: #ccc;
+}
