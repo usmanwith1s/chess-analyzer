@@ -26,23 +26,28 @@ analyzeButton.addEventListener("click", () => {
     }
 
     // -------------------------
-    // Extract moves
+    // Load PGN using chess.js
     // -------------------------
 
-    const moveText = pgn
-        .replace(/^\[.*\]$/gm, "")
-        .trim();
+    const chess = new Chess();
 
-    const moves = moveText
-        .replace(/\d+\.(\.\.)?/g, "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .split(" ");
+    const loaded = chess.load_pgn(pgn);
 
-    // Remove result from moves
-    const results = ["1-0", "0-1", "1/2-1/2", "*"];
+    if (!loaded) {
+        result.innerHTML = `
+            <h2>Invalid PGN</h2>
+            <p>The PGN could not be loaded by the chess engine.</p>
+        `;
 
-    const cleanMoves = moves.filter(move => !results.includes(move));
+        console.log("Invalid PGN");
+        return;
+    }
+
+    // -------------------------
+    // Get actual moves
+    // -------------------------
+
+    const cleanMoves = chess.history();
 
     // -------------------------
     // Display analysis
@@ -64,8 +69,13 @@ analyzeButton.addEventListener("click", () => {
         <h3>Moves</h3>
 
         <p>${cleanMoves.join(" ")}</p>
+
+        <h3>PGN Status</h3>
+
+        <p>✅ PGN successfully loaded by chess.js</p>
     `;
 
     console.log("Headers:", headers);
     console.log("Moves:", cleanMoves);
+    console.log("Current FEN:", chess.fen());
 });
