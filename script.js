@@ -1,3 +1,4 @@
+console.log("Chess.js test:", typeof Chess);
 const pgnInput = document.getElementById("pgn-input");
 const analyzeButton = document.getElementById("analyze-button");
 const result = document.getElementById("result");
