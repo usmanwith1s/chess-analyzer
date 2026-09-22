@@ -26,34 +26,96 @@ analyzeButton.addEventListener("click", () => {
     }
 
     // -------------------------
-    // Load PGN using chess.js
+    // Extract move section
+    // -------------------------
+
+    const moveText = pgn
+        .replace(/^\[.*\]$/gm, "")
+        .replace(/\{[^}]*\}/g, "")
+        .replace(/\([^)]*\)/g, "")
+        .replace(/\$\d+/g, "")
+        .replace(/\d+\.(\.\.)?/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const results = ["1-0", "0-1", "1/2-1/2", "*"];
+
+    const moves = moveText
+        .split(" ")
+        .filter(move => move && !results.includes(move));
+
+    // -------------------------
+    // Replay moves using chess.js
     // -------------------------
 
     const chess = new Chess();
-    
-const loaded = chess.load_pgn(pgn, {
-    sloppy: true
-});
 
-if (!loaded) {
-        result.innerHTML = `
-            <h2>Invalid PGN</h2>
-            <p>The PGN could not be loaded by the chess engine.</p>
-        `;
+    const validMoves = [];
+    let invalidMove = null;
 
-        console.log("Invalid PGN");
-        return;
+    for (let i = 0; i < moves.length; i++) {
+
+        const move = moves[i];
+
+        try {
+
+            const playedMove = chess.move(move, {
+                sloppy: true
+            });
+
+            if (!playedMove) {
+                invalidMove = {
+                    move: move,
+                    moveNumber: i + 1
+                };
+
+                break;
+            }
+
+            validMoves.push(playedMove.san);
+
+        } catch (error) {
+
+            invalidMove = {
+                move: move,
+                moveNumber: i + 1,
+                error: error.message
+            };
+
+            break;
+        }
     }
 
     // -------------------------
-    // Get actual moves
+    // Display result
     // -------------------------
 
-    const cleanMoves = chess.history();
+    if (invalidMove) {
 
-    // -------------------------
-    // Display analysis
-    // -------------------------
+        result.innerHTML = `
+            <h2>PGN Error</h2>
+
+            <p>
+                <strong>Problem at move:</strong>
+                ${invalidMove.move}
+            </p>
+
+            <p>
+                <strong>Move number:</strong>
+                ${invalidMove.moveNumber}
+            </p>
+
+            <p>
+                <strong>Valid moves processed:</strong>
+                ${validMoves.length}
+            </p>
+        `;
+
+        console.log("Invalid move:", invalidMove);
+        console.log("Valid moves:", validMoves);
+
+        return;
+    }
 
     result.innerHTML = `
         <h2>Game Information</h2>
@@ -66,18 +128,18 @@ if (!loaded) {
 
         <p><strong>Result:</strong> ${headers.Result || "Unknown"}</p>
 
-        <p><strong>Total Moves:</strong> ${cleanMoves.length}</p>
+        <p><strong>Total Moves:</strong> ${validMoves.length}</p>
 
         <h3>Moves</h3>
 
-        <p>${cleanMoves.join(" ")}</p>
+        <p>${validMoves.join(" ")}</p>
 
         <h3>PGN Status</h3>
 
-        <p>✅ PGN successfully loaded by chess.js</p>
+        <p>✅ Every move was successfully understood by chess.js.</p>
     `;
 
     console.log("Headers:", headers);
-    console.log("Moves:", cleanMoves);
-    console.log("Current FEN:", chess.fen());
+    console.log("Moves:", validMoves);
+    console.log("Final FEN:", chess.fen());
 });
