@@ -30,10 +30,12 @@ analyzeButton.addEventListener("click", () => {
     // -------------------------
 
     const chess = new Chess();
+    
+const loaded = chess.load_pgn(pgn, {
+    sloppy: true
+});
 
-    const loaded = chess.load_pgn(pgn);
-
-    if (!loaded) {
+if (!loaded) {
         result.innerHTML = `
             <h2>Invalid PGN</h2>
             <p>The PGN could not be loaded by the chess engine.</p>
