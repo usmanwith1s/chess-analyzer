@@ -13,6 +13,14 @@ let currentPosition = 0;
 let autoplayTimer = null;
 
 // ======================================================
+// STOCKFISH ENGINE
+// ======================================================
+
+let stockfish = null;
+let enginePromise = null;
+let activeEngineRequest = null;
+
+// ======================================================
 // BASIC HTML SAFETY
 // ======================================================
 
@@ -711,7 +719,354 @@ function renderAnalyzer() {
     document.getElementById("ca-play")
         .addEventListener("click", toggleAutoplay);
 }
+// ======================================================
+// START STOCKFISH
+// ======================================================
 
+function initStockfish() {
+
+    if (enginePromise) {
+        return enginePromise;
+    }
+
+    enginePromise = new Promise((resolve, reject) => {
+
+        try {
+
+            stockfish = new Worker(
+                "engine/stockfish-19-lite-single.js"
+            );
+
+        } catch (error) {
+
+            enginePromise = null;
+            reject(error);
+            return;
+        }
+
+        let ready = false;
+
+        const timeout = setTimeout(() => {
+
+            if (!ready) {
+
+                enginePromise = null;
+
+                reject(
+                    new Error(
+                        "Stockfish failed to become ready."
+                    )
+                );
+            }
+
+        }, 15000);
+
+        stockfish.onmessage = (event) => {
+
+            const line = String(event.data);
+
+            console.log("[Stockfish]", line);
+
+            // Engine finished initialization
+            if (line === "uciok") {
+
+                stockfish.postMessage("isready");
+
+                return;
+            }
+
+            // Engine is ready
+            if (line === "readyok") {
+
+                ready = true;
+
+                clearTimeout(timeout);
+
+                resolve();
+
+                return;
+            }
+
+            // Engine information while searching
+            if (
+                activeEngineRequest &&
+                line.startsWith("info ")
+            ) {
+
+                parseEngineInfo(line);
+
+                return;
+            }
+
+            // Final result
+            if (
+                activeEngineRequest &&
+                line.startsWith("bestmove")
+            ) {
+
+                const parts = line.split(/\s+/);
+
+                const bestMove = parts[1] || null;
+
+                const request = activeEngineRequest;
+
+                activeEngineRequest = null;
+
+                request.resolve({
+                    bestMove: bestMove,
+                    evaluation: request.evaluation,
+                    depth: request.depth,
+                    pv: request.pv
+                });
+            }
+        };
+
+        stockfish.onerror = (error) => {
+
+            console.error(
+                "Stockfish worker error:",
+                error
+            );
+
+            enginePromise = null;
+
+            if (activeEngineRequest) {
+
+                activeEngineRequest.reject(error);
+
+                activeEngineRequest = null;
+            }
+
+            reject(error);
+        };
+
+        // Start UCI
+        stockfish.postMessage("uci");
+    });
+
+    return enginePromise;
+}
+
+// ======================================================
+// PARSE ENGINE INFO
+// ======================================================
+
+function parseEngineInfo(line) {
+
+    if (!activeEngineRequest) {
+        return;
+    }
+
+    const depthMatch =
+        line.match(/\bdepth\s+(\d+)/);
+
+    if (depthMatch) {
+        activeEngineRequest.depth =
+            Number(depthMatch[1]);
+    }
+
+    const scoreMatch =
+        line.match(
+            /\bscore\s+(cp|mate)\s+(-?\d+)/
+        );
+
+    if (scoreMatch) {
+
+        activeEngineRequest.evaluation = {
+            type: scoreMatch[1],
+            value: Number(scoreMatch[2])
+        };
+    }
+
+    const pvMatch =
+        line.match(/\bpv\s+(.+)$/);
+
+    if (pvMatch) {
+
+        activeEngineRequest.pv =
+            pvMatch[1].trim();
+    }
+}
+
+// ======================================================
+// EVALUATE ONE POSITION
+// ======================================================
+
+function evaluatePosition(fen, depth = 14) {
+
+    return initStockfish().then(() => {
+
+        return new Promise((resolve, reject) => {
+
+            // Stop previous search
+            if (activeEngineRequest) {
+
+                stockfish.postMessage("stop");
+
+                activeEngineRequest.reject(
+                    new Error(
+                        "Previous engine search cancelled."
+                    )
+                );
+
+                activeEngineRequest = null;
+            }
+
+            activeEngineRequest = {
+                resolve: resolve,
+                reject: reject,
+                evaluation: null,
+                depth: 0,
+                pv: ""
+            };
+
+            stockfish.postMessage(
+                `position fen ${fen}`
+            );
+
+            stockfish.postMessage(
+                `go depth ${depth}`
+            );
+        });
+    });
+}
+
+// ======================================================
+// FORMAT ENGINE SCORE
+// ======================================================
+
+function formatEngineScore(evaluation, fen) {
+
+    if (!evaluation) {
+        return "Calculating...";
+    }
+
+    const sideToMove =
+        fen.split(" ")[1];
+
+    let value =
+        evaluation.value;
+
+    // UCI reports score from side-to-move perspective.
+    // Convert it to White's perspective.
+    if (sideToMove === "b") {
+        value = -value;
+    }
+
+    if (evaluation.type === "mate") {
+
+        return `#${value}`;
+    }
+
+    const pawns =
+        value / 100;
+
+    if (pawns > 0) {
+        return `+${pawns.toFixed(2)}`;
+    }
+
+    return pawns.toFixed(2);
+}
+
+// ======================================================
+// ANALYZE CURRENT POSITION
+// ======================================================
+
+async function analyzeCurrentPosition() {
+
+    if (!gameData) {
+        return;
+    }
+
+    const position =
+        gameData.positions[currentPosition];
+
+    const button =
+        document.getElementById("ca-engine-button");
+
+    const status =
+        document.getElementById("ca-engine-status");
+
+    const evaluation =
+        document.getElementById("ca-engine-evaluation");
+
+    const bestMove =
+        document.getElementById("ca-engine-best");
+
+    const depth =
+        document.getElementById("ca-engine-depth");
+
+    const pv =
+        document.getElementById("ca-engine-pv");
+
+    if (!button || !status) {
+        return;
+    }
+
+    button.disabled = true;
+    button.textContent = "🧠 Thinking...";
+
+    status.textContent =
+        "Stockfish is analyzing this position.";
+
+    evaluation.textContent =
+        "Calculating...";
+
+    bestMove.textContent =
+        "Calculating...";
+
+    depth.textContent =
+        "—";
+
+    pv.textContent =
+        "—";
+
+    try {
+
+        const result =
+            await evaluatePosition(
+                position.fen,
+                14
+            );
+
+        evaluation.textContent =
+            formatEngineScore(
+                result.evaluation,
+                position.fen
+            );
+
+        bestMove.textContent =
+            result.bestMove || "—";
+
+        depth.textContent =
+            result.depth || "—";
+
+        pv.textContent =
+            result.pv || "—";
+
+        status.textContent =
+            "✅ Position analyzed successfully.";
+
+    } catch (error) {
+
+        console.error(
+            "Engine analysis failed:",
+            error
+        );
+
+        status.textContent =
+            "❌ Stockfish could not analyze this position.";
+
+        evaluation.textContent =
+            "Error";
+
+    } finally {
+
+        button.disabled = false;
+        button.textContent =
+            "🧠 Analyze Position";
+    }
+}
 // ======================================================
 // MOVE LIST
 // ======================================================
