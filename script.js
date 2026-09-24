@@ -9,7 +9,7 @@ const analyzeButton = document.getElementById("analyze-button");
 const result = document.getElementById("result");
 
 // ======================================================
-// GLOBAL DATA
+// GLOBAL GAME DATA
 // ======================================================
 
 let gameData = null;
@@ -27,6 +27,8 @@ let analysisRunId = 0;
 
 const engineCache = new Map();
 
+// Start lower for full-game browser analysis.
+// We can add a Deep Analysis option later.
 const ENGINE_DEPTH = 10;
 
 // ======================================================
@@ -34,7 +36,6 @@ const ENGINE_DEPTH = 10;
 // ======================================================
 
 function escapeHtml(text) {
-
     return String(text)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
@@ -44,7 +45,7 @@ function escapeHtml(text) {
 }
 
 // ======================================================
-// STYLES
+// ANALYZER STYLES
 // ======================================================
 
 function injectAnalyzerStyles() {
@@ -54,21 +55,28 @@ function injectAnalyzerStyles() {
     }
 
     const style = document.createElement("style");
-
     style.id = "chess-analyzer-styles";
 
     style.textContent = `
 
+        /* =============================================
+           MAIN
+        ============================================= */
+
         .ca-wrapper {
-            margin-top: 30px;
             width: 100%;
+            margin-top: 30px;
         }
+
+        /* =============================================
+           GAME INFORMATION
+        ============================================= */
 
         .ca-game-info {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 12px;
-            margin-bottom: 20px;
+            margin-bottom: 22px;
         }
 
         .ca-info-card {
@@ -91,6 +99,10 @@ function injectAnalyzerStyles() {
             word-break: break-word;
         }
 
+        /* =============================================
+           MAIN ANALYZER LAYOUT
+        ============================================= */
+
         .ca-analyzer {
             display: grid;
             grid-template-columns:
@@ -105,10 +117,24 @@ function injectAnalyzerStyles() {
             width: 100%;
         }
 
-        .ca-board {
+        /* =============================================
+           BOARD + EVALUATION BAR
+        ============================================= */
+
+        .ca-board-line {
             width: min(100%, 600px);
-            aspect-ratio: 1;
             margin: 0 auto;
+
+            display: grid;
+            grid-template-columns: 42px minmax(0, 1fr);
+
+            gap: 8px;
+            align-items: stretch;
+        }
+
+        .ca-board {
+            width: 100%;
+            aspect-ratio: 1 / 1;
 
             display: grid;
             grid-template-columns: repeat(8, 1fr);
@@ -120,9 +146,126 @@ function injectAnalyzerStyles() {
                 0 18px 45px rgba(0,0,0,0.35);
         }
 
+        /* =============================================
+           EVALUATION SIDEBAR
+        ============================================= */
+
+        .ca-eval-sidebar {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+
+            min-width: 0;
+        }
+
+        .ca-eval-label {
+            width: 100%;
+            margin-bottom: 7px;
+
+            text-align: center;
+
+            font-size: 9px;
+            font-weight: 900;
+
+            line-height: 1.2;
+
+            word-break: break-word;
+        }
+
+        .ca-eval-bar {
+            position: relative;
+
+            width: 100%;
+            height: 100%;
+
+            min-height: 300px;
+
+            border-radius: 8px;
+
+            overflow: hidden;
+
+            background: #202020;
+
+            border:
+                1px solid rgba(255,255,255,0.15);
+
+            box-shadow:
+                inset 0 0 12px rgba(0,0,0,0.28);
+        }
+
+        /*
+           White occupies the bottom.
+           Height changes according to evaluation.
+        */
+
+        .ca-eval-bar-fill {
+            position: absolute;
+
+            left: 0;
+            bottom: 0;
+
+            width: 100%;
+            height: 50%;
+
+            background: #f2f2f2;
+
+            transition:
+                height 0.35s ease;
+        }
+
+        .ca-eval-bar-top,
+        .ca-eval-bar-bottom {
+            position: absolute;
+
+            left: 0;
+
+            width: 100%;
+
+            z-index: 5;
+
+            text-align: center;
+
+            font-size: 7px;
+            font-weight: 900;
+
+            pointer-events: none;
+        }
+
+        .ca-eval-bar-top {
+            top: 5px;
+            color: #ffffff;
+        }
+
+        .ca-eval-bar-bottom {
+            bottom: 5px;
+            color: #111111;
+        }
+
+        .ca-eval-zero {
+            position: absolute;
+
+            top: 50%;
+            left: 0;
+
+            width: 100%;
+            height: 2px;
+
+            z-index: 4;
+
+            background:
+                rgba(110,110,110,0.75);
+
+            pointer-events: none;
+        }
+
+        /* =============================================
+           BOARD SQUARES
+        ============================================= */
+
         .ca-square {
             position: relative;
-            aspect-ratio: 1;
+
+            aspect-ratio: 1 / 1;
 
             display: flex;
             align-items: center;
@@ -139,14 +282,23 @@ function injectAnalyzerStyles() {
             background: #3f7d48;
         }
 
+        /* =============================================
+           CHESS PIECES
+        ============================================= */
+
         .ca-piece {
+            position: relative;
+            display: inline-block;
+
             font-family:
                 "Segoe UI Symbol",
                 "Noto Sans Symbols 2",
                 "Arial Unicode MS",
                 sans-serif;
 
-            font-size: clamp(28px, 6vw, 58px);
+            font-size:
+                clamp(28px, 6vw, 58px);
+
             line-height: 1;
 
             filter:
@@ -157,10 +309,14 @@ function injectAnalyzerStyles() {
             z-index: 2;
         }
 
+        /* =============================================
+           LAST MOVE HIGHLIGHT
+        ============================================= */
+
         .ca-last-from {
             box-shadow:
                 inset 0 0 0 5px
-                rgba(255,235,59,0.42);
+                rgba(255,235,59,0.40);
         }
 
         .ca-last-to {
@@ -169,17 +325,74 @@ function injectAnalyzerStyles() {
                 rgba(255,235,59,0.75);
         }
 
+        /*
+           Small glowing sign on the piece that
+           just moved.
+        */
+
+        .ca-move-marker {
+            position: absolute;
+
+            top: -7px;
+            right: -8px;
+
+            width: 11px;
+            height: 11px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 50%;
+
+            background: #ffd737;
+
+            border:
+                2px solid #ffffff;
+
+            box-shadow:
+                0 0 0 3px
+                rgba(255,215,55,0.22),
+
+                0 0 12px
+                rgba(255,215,55,0.90);
+
+            z-index: 20;
+        }
+
+        .ca-move-marker::after {
+            content: "";
+
+            width: 4px;
+            height: 4px;
+
+            border-radius: 50%;
+
+            background: #ffffff;
+        }
+
+        /* =============================================
+           CHECK
+        ============================================= */
+
         .ca-check {
             box-shadow:
                 inset 0 0 0 6px
                 rgba(255,70,70,0.85);
         }
 
+        /* =============================================
+           COORDINATES
+        ============================================= */
+
         .ca-coordinate {
             position: absolute;
+
             font-size: 10px;
             font-weight: 700;
+
             opacity: 0.6;
+
             z-index: 3;
         }
 
@@ -195,15 +408,24 @@ function injectAnalyzerStyles() {
 
         .ca-board-caption {
             margin-top: 12px;
+
             text-align: center;
+
             opacity: 0.75;
+
             font-size: 14px;
         }
+
+        /* =============================================
+           CONTROLS
+        ============================================= */
 
         .ca-controls {
             display: flex;
             flex-wrap: wrap;
+
             gap: 8px;
+
             margin-top: 18px;
         }
 
@@ -223,12 +445,28 @@ function injectAnalyzerStyles() {
             cursor: pointer;
 
             font-weight: 700;
+
+            transition:
+                background 0.15s ease,
+                transform 0.15s ease;
         }
 
         .ca-control:hover {
             background:
                 rgba(255,255,255,0.11);
+
+            transform: translateY(-1px);
         }
+
+        .ca-control:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* =============================================
+           RIGHT PANEL
+        ============================================= */
 
         .ca-panel {
             min-width: 0;
@@ -246,63 +484,13 @@ function injectAnalyzerStyles() {
 
         .ca-panel-title {
             margin: 0 0 14px;
+
             font-size: 21px;
         }
 
-        .ca-current-move {
-            padding: 14px 16px;
-            margin-bottom: 14px;
-
-            border-radius: 12px;
-
-            background:
-                rgba(255,255,255,0.05);
-        }
-
-        .ca-current-move-label {
-            font-size: 12px;
-            opacity: 0.6;
-            margin-bottom: 5px;
-        }
-
-        .ca-current-move-value {
-            font-size: 21px;
-            font-weight: 800;
-        }
-
-        .ca-progress-box {
-            margin: 16px 0;
-        }
-
-        .ca-progress-track {
-            width: 100%;
-            height: 8px;
-
-            margin-top: 8px;
-
-            border-radius: 999px;
-
-            background:
-                rgba(255,255,255,0.08);
-
-            overflow: hidden;
-        }
-
-        .ca-progress-fill {
-            height: 100%;
-            width: 0%;
-
-            border-radius: 999px;
-
-            background:
-                linear-gradient(
-                    90deg,
-                    #44d07a,
-                    #80e8ff
-                );
-
-            transition: width 0.15s ease;
-        }
+        /* =============================================
+           STATUS
+        ============================================= */
 
         .ca-engine-status {
             margin-top: 10px;
@@ -317,11 +505,85 @@ function injectAnalyzerStyles() {
             font-size: 13px;
         }
 
+        /* =============================================
+           PROGRESS
+        ============================================= */
+
+        .ca-progress-box {
+            margin-bottom: 15px;
+        }
+
+        .ca-progress-track {
+            width: 100%;
+            height: 8px;
+
+            margin-top: 8px;
+
+            overflow: hidden;
+
+            border-radius: 999px;
+
+            background:
+                rgba(255,255,255,0.08);
+        }
+
+        .ca-progress-fill {
+            width: 0%;
+            height: 100%;
+
+            border-radius: 999px;
+
+            background:
+                linear-gradient(
+                    90deg,
+                    #44d07a,
+                    #80e8ff
+                );
+
+            transition:
+                width 0.18s ease;
+        }
+
+        /* =============================================
+           CURRENT MOVE
+        ============================================= */
+
+        .ca-current-move {
+            padding: 14px 16px;
+
+            margin-top: 15px;
+
+            margin-bottom: 14px;
+
+            border-radius: 12px;
+
+            background:
+                rgba(255,255,255,0.05);
+        }
+
+        .ca-current-move-label {
+            font-size: 12px;
+
+            opacity: 0.6;
+
+            margin-bottom: 5px;
+        }
+
+        .ca-current-move-value {
+            font-size: 21px;
+
+            font-weight: 800;
+        }
+
+        /* =============================================
+           ENGINE STATS
+        ============================================= */
+
         .ca-engine-grid {
             display: grid;
 
             grid-template-columns:
-                repeat(2, minmax(0,1fr));
+                repeat(2, minmax(0, 1fr));
 
             gap: 10px;
 
@@ -357,9 +619,156 @@ function injectAnalyzerStyles() {
             word-break: break-word;
         }
 
+        /* =============================================
+           EVALUATION GRAPH
+        ============================================= */
+
+        .ca-evaluation {
+            margin-top: 16px;
+
+            overflow: hidden;
+
+            border-radius: 14px;
+
+            border:
+                1px solid rgba(255,255,255,0.08);
+        }
+
+        .ca-evaluation-header {
+            padding: 12px 14px;
+
+            background:
+                rgba(255,255,255,0.05);
+
+            font-weight: 800;
+        }
+
+        #ca-eval-graph {
+            display: block;
+
+            width: 100%;
+            height: 180px;
+
+            background: #15181d;
+        }
+
+        /* =============================================
+           ACCURACY
+        ============================================= */
+
+        .ca-accuracy-grid {
+            display: grid;
+
+            grid-template-columns:
+                repeat(2, minmax(0,1fr));
+
+            gap: 10px;
+
+            margin-top: 15px;
+        }
+
+        .ca-accuracy-card {
+            padding: 16px;
+
+            border-radius: 14px;
+
+            background:
+                rgba(255,255,255,0.045);
+
+            text-align: center;
+        }
+
+        .ca-accuracy-player {
+            font-size: 13px;
+
+            opacity: 0.65;
+        }
+
+        .ca-accuracy-value {
+            display: block;
+
+            margin-top: 5px;
+
+            font-size: 30px;
+
+            font-weight: 900;
+        }
+
+        /* =============================================
+           MOVE COUNTS
+        ============================================= */
+
+        .ca-count-grid {
+            display: grid;
+
+            grid-template-columns:
+                repeat(2,minmax(0,1fr));
+
+            gap: 8px;
+
+            margin-top: 10px;
+        }
+
+        .ca-count-row {
+            display: flex;
+
+            justify-content: space-between;
+
+            padding: 9px 10px;
+
+            border-radius: 9px;
+
+            background:
+                rgba(255,255,255,0.035);
+
+            font-size: 13px;
+        }
+
+        .ca-count-left {
+            opacity: 0.72;
+        }
+
+        .ca-count-right {
+            font-weight: 800;
+        }
+
+        /* =============================================
+           MOVE COLORS
+        ============================================= */
+
+        .ca-best {
+            color: #9bdc4e;
+        }
+
+        .ca-excellent {
+            color: #72d45c;
+        }
+
+        .ca-good {
+            color: #8bb89b;
+        }
+
+        .ca-inaccuracy {
+            color: #ffd23c;
+        }
+
+        .ca-mistake {
+            color: #ff9b44;
+        }
+
+        .ca-blunder {
+            color: #ff5555;
+        }
+
+        /* =============================================
+           MOVE LIST
+        ============================================= */
+
         .ca-move-list {
             display: flex;
+
             flex-wrap: wrap;
+
             gap: 7px;
 
             max-height: 290px;
@@ -368,7 +777,7 @@ function injectAnalyzerStyles() {
 
             padding-right: 4px;
 
-            margin-bottom: 15px;
+            margin-top: 10px;
         }
 
         .ca-move-button {
@@ -388,9 +797,8 @@ function injectAnalyzerStyles() {
 
             font-size: 13px;
 
-            transition: 0.15s ease;
-
-            position: relative;
+            transition:
+                0.15s ease;
         }
 
         .ca-move-button:hover {
@@ -402,7 +810,7 @@ function injectAnalyzerStyles() {
 
         .ca-move-button.ca-active {
             outline:
-                2px solid rgba(120,255,140,0.7);
+                2px solid rgba(120,255,140,0.70);
 
             background:
                 rgba(80,220,100,0.13);
@@ -410,6 +818,7 @@ function injectAnalyzerStyles() {
 
         .ca-move-number {
             opacity: 0.55;
+
             margin-right: 4px;
         }
 
@@ -443,127 +852,9 @@ function injectAnalyzerStyles() {
                 rgba(255,65,65,0.70);
         }
 
-        .ca-evaluation {
-            margin-top: 16px;
-
-            border-radius: 14px;
-
-            overflow: hidden;
-
-            border:
-                1px solid rgba(255,255,255,0.08);
-        }
-
-        .ca-evaluation-header {
-            padding: 12px 14px;
-
-            background:
-                rgba(255,255,255,0.05);
-
-            font-weight: 800;
-        }
-
-        #ca-eval-graph {
-            width: 100%;
-            height: 180px;
-            display: block;
-            background: #15181d;
-        }
-
-        .ca-accuracy-grid {
-            display: grid;
-
-            grid-template-columns:
-                repeat(2,minmax(0,1fr));
-
-            gap: 10px;
-
-            margin-top: 15px;
-        }
-
-        .ca-accuracy-card {
-            padding: 16px;
-
-            border-radius: 14px;
-
-            background:
-                rgba(255,255,255,0.045);
-
-            text-align: center;
-        }
-
-        .ca-accuracy-player {
-            font-size: 13px;
-            opacity: 0.65;
-        }
-
-        .ca-accuracy-value {
-            display: block;
-
-            margin-top: 5px;
-
-            font-size: 30px;
-
-            font-weight: 900;
-        }
-
-        .ca-count-grid {
-            display: grid;
-
-            grid-template-columns:
-                repeat(2,minmax(0,1fr));
-
-            gap: 8px;
-
-            margin-top: 15px;
-        }
-
-        .ca-count-row {
-            display: flex;
-
-            justify-content: space-between;
-
-            padding: 9px 10px;
-
-            border-radius: 9px;
-
-            background:
-                rgba(255,255,255,0.035);
-
-            font-size: 13px;
-        }
-
-        .ca-count-left {
-            opacity: 0.72;
-        }
-
-        .ca-count-right {
-            font-weight: 800;
-        }
-
-        .ca-best {
-            color: #9bdc4e;
-        }
-
-        .ca-excellent {
-            color: #72d45c;
-        }
-
-        .ca-good {
-            color: #8bb89b;
-        }
-
-        .ca-inaccuracy {
-            color: #ffd23c;
-        }
-
-        .ca-mistake {
-            color: #ff9b44;
-        }
-
-        .ca-blunder {
-            color: #ff5555;
-        }
+        /* =============================================
+           FEN
+        ============================================= */
 
         .ca-fen-box {
             margin-top: 15px;
@@ -603,8 +894,12 @@ function injectAnalyzerStyles() {
             word-break: break-all;
         }
 
+        /* =============================================
+           NOTE
+        ============================================= */
+
         .ca-analysis-note {
-            margin-top: 12px;
+            margin-top: 14px;
 
             font-size: 11px;
 
@@ -612,6 +907,10 @@ function injectAnalyzerStyles() {
 
             line-height: 1.5;
         }
+
+        /* =============================================
+           RESPONSIVE
+        ============================================= */
 
         @media (max-width: 850px) {
 
@@ -625,6 +924,10 @@ function injectAnalyzerStyles() {
             }
 
             .ca-board {
+                width: 100%;
+            }
+
+            .ca-board-line {
                 width: 100%;
             }
         }
@@ -644,6 +947,21 @@ function injectAnalyzerStyles() {
             .ca-panel {
                 padding: 15px;
             }
+
+            .ca-board-line {
+                grid-template-columns:
+                    32px minmax(0,1fr);
+
+                gap: 6px;
+            }
+
+            .ca-eval-bar {
+                min-height: 220px;
+            }
+
+            .ca-eval-label {
+                font-size: 8px;
+            }
         }
     `;
 
@@ -651,12 +969,33 @@ function injectAnalyzerStyles() {
 }
 
 // ======================================================
-// ANALYZE PGN
+// CREATE EMPTY STATS
+// ======================================================
+
+function createEmptyStats() {
+
+    return {
+
+        Best: 0,
+        Excellent: 0,
+        Good: 0,
+        Inaccuracy: 0,
+        Mistake: 0,
+        Blunder: 0,
+
+        totalAccuracy: 0,
+        moves: 0
+    };
+}
+
+// ======================================================
+// ANALYZE BUTTON
 // ======================================================
 
 analyzeButton.addEventListener("click", async () => {
 
-    const pgn = pgnInput.value.trim();
+    const pgn =
+        pgnInput.value.trim();
 
     if (!pgn) {
 
@@ -668,9 +1007,10 @@ analyzeButton.addEventListener("click", async () => {
 
     stopAutoplay();
 
-    // Cancel previous analysis
+    // New analysis run
     analysisRunId++;
 
+    // Stop previous search
     if (activeEngineRequest) {
 
         try {
@@ -679,7 +1019,8 @@ analyzeButton.addEventListener("click", async () => {
             // Ignore
         }
 
-        activeEngineRequest = null;
+        activeEngineRequest =
+            null;
     }
 
     engineCache.clear();
@@ -706,17 +1047,18 @@ analyzeButton.addEventListener("click", async () => {
     }
 
     // ==================================================
-    // MOVES
+    // MOVE TEXT
     // ==================================================
 
-    const moveText = pgn
-        .replace(/^\[.*\]$/gm, "")
-        .replace(/\{[^}]*\}/g, "")
-        .replace(/\([^)]*\)/g, "")
-        .replace(/\$\d+/g, "")
-        .replace(/\d+\.(\.\.)?/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
+    const moveText =
+        pgn
+            .replace(/^\[.*\]$/gm, "")
+            .replace(/\{[^}]*\}/g, "")
+            .replace(/\([^)]*\)/g, "")
+            .replace(/\$\d+/g, "")
+            .replace(/\d+\.(\.\.)?/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
 
     const results = [
         "1-0",
@@ -725,39 +1067,52 @@ analyzeButton.addEventListener("click", async () => {
         "*"
     ];
 
-    const moves = moveText
-        .split(" ")
-        .filter(move =>
-            move &&
-            !results.includes(move)
-        );
+    const moves =
+        moveText
+            .split(" ")
+            .filter(move =>
+                move &&
+                !results.includes(move)
+            );
 
     // ==================================================
-    // REBUILD GAME
+    // CHESS.JS
     // ==================================================
 
-    const chess = new Chess();
+    const chess =
+        new Chess();
+
+    // ==================================================
+    // POSITION HISTORY
+    // ==================================================
 
     const positions = [];
 
+    // Starting position
     positions.push({
 
         index: 0,
+
         moveNumber: 0,
 
         san: "",
+
         side: "w",
 
         label: "Starting Position",
 
         from: null,
+
         to: null,
 
         fen: chess.fen(),
 
         analysis: null,
+
         classification: null,
+
         loss: 0,
+
         accuracy: 100
     });
 
@@ -766,7 +1121,7 @@ analyzeButton.addEventListener("click", async () => {
     let invalidMove = null;
 
     // ==================================================
-    // PLAY MOVES
+    // REPLAY ALL MOVES
     // ==================================================
 
     for (
@@ -775,14 +1130,17 @@ analyzeButton.addEventListener("click", async () => {
         i++
     ) {
 
-        const move = moves[i];
+        const move =
+            moves[i];
 
         try {
 
             const playedMove =
                 chess.move(
                     move,
-                    { sloppy: true }
+                    {
+                        sloppy: true
+                    }
                 );
 
             if (!playedMove) {
@@ -790,6 +1148,7 @@ analyzeButton.addEventListener("click", async () => {
                 invalidMove = {
 
                     move: move,
+
                     index: i,
 
                     moveNumber:
@@ -846,8 +1205,11 @@ analyzeButton.addEventListener("click", async () => {
                     chess.fen(),
 
                 analysis: null,
+
                 classification: null,
+
                 loss: 0,
+
                 accuracy: 100
             });
 
@@ -856,6 +1218,7 @@ analyzeButton.addEventListener("click", async () => {
             invalidMove = {
 
                 move: move,
+
                 index: i,
 
                 moveNumber:
@@ -880,6 +1243,11 @@ analyzeButton.addEventListener("click", async () => {
 
     if (invalidMove) {
 
+        const moveLabel =
+            invalidMove.side === "White"
+                ? `${invalidMove.moveNumber}.`
+                : `${invalidMove.moveNumber}...`;
+
         result.innerHTML = `
 
             <div class="ca-wrapper">
@@ -890,14 +1258,15 @@ analyzeButton.addEventListener("click", async () => {
 
                     <strong>
                         ${escapeHtml(
-                            invalidMove.side === "White"
-                                ? `${invalidMove.moveNumber}.`
-                                : `${invalidMove.moveNumber}...`
-                        )}
-                        ${escapeHtml(
+                            moveLabel +
+                            " " +
                             invalidMove.move
                         )}
                     </strong>
+
+                    (${escapeHtml(
+                        invalidMove.side
+                    )})
 
                     <br><br>
 
@@ -916,7 +1285,7 @@ analyzeButton.addEventListener("click", async () => {
     }
 
     // ==================================================
-    // SAVE
+    // SAVE GAME
     // ==================================================
 
     gameData = {
@@ -927,7 +1296,8 @@ analyzeButton.addEventListener("click", async () => {
 
         positions: positions,
 
-        finalFEN: chess.fen(),
+        finalFEN:
+            chess.fen(),
 
         whiteStats:
             createEmptyStats(),
@@ -951,443 +1321,592 @@ analyzeButton.addEventListener("click", async () => {
     renderAnalyzer();
 
     // ==================================================
-    // AUTOMATIC ENGINE ANALYSIS
+    // AUTOMATIC ANALYSIS
     // ==================================================
 
     await runAutomaticAnalysis();
 });
 
 // ======================================================
-// EMPTY STATS
+// RENDER MAIN ANALYZER
 // ======================================================
 
-function createEmptyStats() {
+function renderAnalyzer() {
 
-    return {
-
-        Best: 0,
-        Excellent: 0,
-        Good: 0,
-        Inaccuracy: 0,
-        Mistake: 0,
-        Blunder: 0,
-
-        totalAccuracy: 0,
-        moves: 0
-    };
-}
-
-// ======================================================
-// STOCKFISH INITIALIZATION
-// ======================================================
-
-function initStockfish() {
-
-    if (enginePromise) {
-        return enginePromise;
-    }
-
-    enginePromise =
-        new Promise(
-            (resolve, reject) => {
-
-                try {
-
-                    stockfish =
-                        new Worker(
-                            "engine/stockfish-19-lite-single.js"
-                        );
-
-                } catch (error) {
-
-                    enginePromise =
-                        null;
-
-                    reject(error);
-
-                    return;
-                }
-
-                let gotUciOk = false;
-
-                const timeout =
-                    setTimeout(
-                        () => {
-
-                            enginePromise =
-                                null;
-
-                            try {
-
-                                stockfish.terminate();
-
-                            } catch (e) {
-                                // Ignore
-                            }
-
-                            reject(
-                                new Error(
-                                    "Stockfish failed to initialize."
-                                )
-                            );
-
-                        },
-                        20000
-                    );
-
-                stockfish.onmessage =
-                    (event) => {
-
-                        const line =
-                            String(
-                                event.data
-                            ).trim();
-
-                        console.log(
-                            "[Stockfish]",
-                            line
-                        );
-
-                        // --------------------------
-                        // UCI READY
-                        // --------------------------
-
-                        if (
-                            line ===
-                            "uciok"
-                        ) {
-
-                            gotUciOk =
-                                true;
-
-                            stockfish.postMessage(
-                                "isready"
-                            );
-
-                            return;
-                        }
-
-                        // --------------------------
-                        // ENGINE READY
-                        // --------------------------
-
-                        if (
-                            line ===
-                            "readyok" &&
-                            gotUciOk
-                        ) {
-
-                            clearTimeout(
-                                timeout
-                            );
-
-                            resolve();
-
-                            return;
-                        }
-
-                        // --------------------------
-                        // SEARCH INFO
-                        // --------------------------
-
-                        if (
-                            activeEngineRequest &&
-                            line.startsWith(
-                                "info "
-                            )
-                        ) {
-
-                            parseEngineInfo(
-                                line
-                            );
-
-                            return;
-                        }
-
-                        // --------------------------
-                        // SEARCH END
-                        // --------------------------
-
-                        if (
-                            activeEngineRequest &&
-                            line.startsWith(
-                                "bestmove "
-                            )
-                        ) {
-
-                            const request =
-                                activeEngineRequest;
-
-                            activeEngineRequest =
-                                null;
-
-                            const parts =
-                                line.split(/\s+/);
-
-                            request.resolve({
-
-                                bestMove:
-                                    parts[1] || null,
-
-                                evaluation:
-                                    request.evaluation,
-
-                                depth:
-                                    request.depth,
-
-                                pv:
-                                    request.pv
-                            });
-                        }
-                    };
-
-                stockfish.onerror =
-                    (error) => {
-
-                        console.error(
-                            "Stockfish error:",
-                            error
-                        );
-
-                        if (
-                            activeEngineRequest
-                        ) {
-
-                            activeEngineRequest.reject(
-                                error
-                            );
-
-                            activeEngineRequest =
-                                null;
-                        }
-
-                        enginePromise =
-                            null;
-
-                        reject(error);
-                    };
-
-                stockfish.postMessage(
-                    "uci"
-                );
-            }
-        );
-
-    return enginePromise;
-}
-
-// ======================================================
-// PARSE ENGINE INFO
-// ======================================================
-
-function parseEngineInfo(line) {
-
-    if (!activeEngineRequest) {
+    if (!gameData) {
         return;
     }
 
-    // --------------------------
-    // DEPTH
-    // --------------------------
+    const headers =
+        gameData.headers;
 
-    const depthMatch =
-        line.match(
-            /\bdepth\s+(\d+)/
-        );
+    result.innerHTML = `
 
-    if (depthMatch) {
+        <div class="ca-wrapper">
 
-        activeEngineRequest.depth =
-            Number(
-                depthMatch[1]
-            );
-    }
+            <!-- ===================================== -->
+            <!-- GAME INFO -->
+            <!-- ===================================== -->
 
-    // --------------------------
-    // SCORE
-    // --------------------------
+            <div class="ca-game-info">
 
-    const scoreMatch =
-        line.match(
-            /\bscore\s+(cp|mate)\s+(-?\d+)/
-        );
+                <div class="ca-info-card">
 
-    if (scoreMatch) {
+                    <span class="ca-info-label">
+                        White
+                    </span>
 
-        activeEngineRequest.evaluation = {
+                    <span class="ca-info-value">
+                        ${escapeHtml(
+                            headers.White ||
+                            "Unknown"
+                        )}
+                    </span>
 
-            type:
-                scoreMatch[1],
+                </div>
 
-            value:
-                Number(
-                    scoreMatch[2]
-                )
-        };
-    }
+                <div class="ca-info-card">
 
-    // --------------------------
-    // PV
-    // --------------------------
+                    <span class="ca-info-label">
+                        Black
+                    </span>
 
-    const pvMatch =
-        line.match(
-            /\bpv\s+(.+)$/
-        );
+                    <span class="ca-info-value">
+                        ${escapeHtml(
+                            headers.Black ||
+                            "Unknown"
+                        )}
+                    </span>
 
-    if (pvMatch) {
+                </div>
 
-        activeEngineRequest.pv =
-            pvMatch[1].trim();
-    }
-}
+                <div class="ca-info-card">
 
-// ======================================================
-// SCORE FROM WHITE'S PERSPECTIVE
-// ======================================================
+                    <span class="ca-info-label">
+                        Result
+                    </span>
 
-function scoreFromWhitePerspective(
-    evaluation,
-    fen
-) {
+                    <span class="ca-info-value">
+                        ${escapeHtml(
+                            headers.Result ||
+                            "Unknown"
+                        )}
+                    </span>
 
-    if (!evaluation) {
-        return null;
-    }
+                </div>
 
-    let value =
-        Number(
-            evaluation.value
-        );
+                <div class="ca-info-card">
 
-    const sideToMove =
-        fen.split(" ")[1];
+                    <span class="ca-info-label">
+                        White Rating
+                    </span>
 
-    if (
-        evaluation.type ===
-        "mate"
-    ) {
+                    <span class="ca-info-value">
+                        ${escapeHtml(
+                            headers.WhiteElo ||
+                            "Unknown"
+                        )}
+                    </span>
 
-        const mateMagnitude =
-            Math.max(
-                1,
-                100000 -
-                Math.abs(value) * 1000
-            );
+                </div>
 
-        value =
-            value > 0
-                ? mateMagnitude
-                : -mateMagnitude;
-    }
+                <div class="ca-info-card">
 
-    if (
-        sideToMove === "b"
-    ) {
+                    <span class="ca-info-label">
+                        Black Rating
+                    </span>
 
-        value = -value;
-    }
+                    <span class="ca-info-value">
+                        ${escapeHtml(
+                            headers.BlackElo ||
+                            "Unknown"
+                        )}
+                    </span>
 
-    return value;
-}
+                </div>
 
-// ======================================================
-// EVALUATE ONE FEN
-// ======================================================
+                <div class="ca-info-card">
 
-function evaluateFen(
-    fen,
-    depth = ENGINE_DEPTH
-) {
+                    <span class="ca-info-label">
+                        Moves
+                    </span>
 
-    const key =
-        `${fen}|${depth}`;
+                    <span class="ca-info-value">
+                        ${gameData.moves.length}
+                    </span>
 
-    if (
-        engineCache.has(key)
-    ) {
+                </div>
 
-        return Promise.resolve(
-            engineCache.get(key)
-        );
-    }
+            </div>
 
-    return initStockfish()
-        .then(
+            <!-- ===================================== -->
+            <!-- ANALYZER -->
+            <!-- ===================================== -->
+
+            <div class="ca-analyzer">
+
+                <!-- ================================= -->
+                <!-- BOARD -->
+                <!-- ================================= -->
+
+                <div class="ca-board-area">
+
+                    <div class="ca-board-line">
+
+                        <!-- EVALUATION BAR -->
+
+                        <div class="ca-eval-sidebar">
+
+                            <div
+                                id="ca-eval-label"
+                                class="ca-eval-label">
+
+                                Analyzing
+
+                            </div>
+
+                            <div class="ca-eval-bar">
+
+                                <div
+                                    id="ca-eval-bar-fill"
+                                    class="ca-eval-bar-fill">
+                                </div>
+
+                                <div
+                                    class="ca-eval-bar-top">
+                                    BLACK
+                                </div>
+
+                                <div
+                                    class="ca-eval-bar-bottom">
+                                    WHITE
+                                </div>
+
+                                <div
+                                    class="ca-eval-zero">
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                        <!-- CHESSBOARD -->
+
+                        <div
+                            id="ca-board"
+                            class="ca-board">
+                        </div>
+
+                    </div>
+
+                    <div
+                        id="ca-board-caption"
+                        class="ca-board-caption">
+                    </div>
+
+                    <!-- CONTROLS -->
+
+                    <div class="ca-controls">
+
+                        <button
+                            id="ca-start"
+                            class="ca-control">
+
+                            ⏮ Start
+
+                        </button>
+
+                        <button
+                            id="ca-prev"
+                            class="ca-control">
+
+                            ◀ Previous
+
+                        </button>
+
+                        <button
+                            id="ca-play"
+                            class="ca-control">
+
+                            ▶ Play
+
+                        </button>
+
+                        <button
+                            id="ca-next"
+                            class="ca-control">
+
+                            Next ▶
+
+                        </button>
+
+                        <button
+                            id="ca-end"
+                            class="ca-control">
+
+                            End ⏭
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+                <!-- ================================= -->
+                <!-- RIGHT PANEL -->
+                <!-- ================================= -->
+
+                <div class="ca-panel">
+
+                    <h2 class="ca-panel-title">
+                        Game Analysis
+                    </h2>
+
+                    <!-- ANALYSIS STATUS -->
+
+                    <div
+                        id="ca-engine-status"
+                        class="ca-engine-status">
+
+                        ⏳ Preparing Stockfish...
+
+                    </div>
+
+                    <!-- PROGRESS -->
+
+                    <div class="ca-progress-box">
+
+                        <div
+                            class="ca-progress-track">
+
+                            <div
+                                id="ca-progress-fill"
+                                class="ca-progress-fill">
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    <!-- EVALUATION GRAPH -->
+
+                    <div class="ca-evaluation">
+
+                        <div class="ca-evaluation-header">
+                            Evaluation
+                        </div>
+
+                        <svg
+                            id="ca-eval-graph"
+                            viewBox="0 0 900 180"
+                            preserveAspectRatio="none">
+                        </svg>
+
+                    </div>
+
+                    <!-- ACCURACY -->
+
+                    <div class="ca-accuracy-grid">
+
+                        <div class="ca-accuracy-card">
+
+                            <span
+                                class="ca-accuracy-player">
+
+                                ${escapeHtml(
+                                    headers.White ||
+                                    "White"
+                                )}
+
+                            </span>
+
+                            <span
+                                id="ca-white-accuracy"
+                                class="ca-accuracy-value">
+
+                                —
+
+                            </span>
+
+                        </div>
+
+                        <div class="ca-accuracy-card">
+
+                            <span
+                                class="ca-accuracy-player">
+
+                                ${escapeHtml(
+                                    headers.Black ||
+                                    "Black"
+                                )}
+
+                            </span>
+
+                            <span
+                                id="ca-black-accuracy"
+                                class="ca-accuracy-value">
+
+                                —
+
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                    <!-- CURRENT MOVE -->
+
+                    <div class="ca-current-move">
+
+                        <div class="ca-current-move-label">
+                            Current Move
+                        </div>
+
+                        <div
+                            id="ca-current-move"
+                            class="ca-current-move-value">
+
+                        </div>
+
+                    </div>
+
+                    <!-- ENGINE -->
+
+                    <div class="ca-engine-grid">
+
+                        <div class="ca-engine-stat">
+
+                            <span
+                                class="ca-engine-stat-label">
+                                Evaluation
+                            </span>
+
+                            <span
+                                id="ca-engine-evaluation"
+                                class="ca-engine-stat-value">
+
+                                —
+
+                            </span>
+
+                        </div>
+
+                        <div class="ca-engine-stat">
+
+                            <span
+                                class="ca-engine-stat-label">
+                                Best Move
+                            </span>
+
+                            <span
+                                id="ca-engine-best"
+                                class="ca-engine-stat-value">
+
+                                —
+
+                            </span>
+
+                        </div>
+
+                        <div class="ca-engine-stat">
+
+                            <span
+                                class="ca-engine-stat-label">
+                                Played Move
+                            </span>
+
+                            <span
+                                id="ca-engine-played"
+                                class="ca-engine-stat-value">
+
+                                —
+
+                            </span>
+
+                        </div>
+
+                        <div class="ca-engine-stat">
+
+                            <span
+                                class="ca-engine-stat-label">
+                                Move Quality
+                            </span>
+
+                            <span
+                                id="ca-engine-quality"
+                                class="ca-engine-stat-value">
+
+                                —
+
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                    <!-- MOVE COUNTS -->
+
+                    <div class="ca-fen-box">
+
+                        <span class="ca-fen-label">
+                            White Moves
+                        </span>
+
+                        <div
+                            id="ca-white-counts"
+                            class="ca-count-grid">
+                        </div>
+
+                    </div>
+
+                    <div class="ca-fen-box">
+
+                        <span class="ca-fen-label">
+                            Black Moves
+                        </span>
+
+                        <div
+                            id="ca-black-counts"
+                            class="ca-count-grid">
+                        </div>
+
+                    </div>
+
+                    <!-- MOVE LIST -->
+
+                    <div class="ca-fen-box">
+
+                        <span class="ca-fen-label">
+                            Moves
+                        </span>
+
+                        <div
+                            id="ca-move-list"
+                            class="ca-move-list">
+                        </div>
+
+                    </div>
+
+                    <!-- FEN -->
+
+                    <div class="ca-fen-box">
+
+                        <span class="ca-fen-label">
+                            Current FEN
+                        </span>
+
+                        <code
+                            id="ca-fen"
+                            class="ca-fen">
+                        </code>
+
+                    </div>
+
+                    <!-- PV -->
+
+                    <div class="ca-fen-box">
+
+                        <span class="ca-fen-label">
+                            Engine Line
+                        </span>
+
+                        <code
+                            id="ca-engine-pv"
+                            class="ca-fen">
+
+                            —
+
+                        </code>
+
+                    </div>
+
+                    <div class="ca-analysis-note">
+
+                        Accuracy and move classifications
+                        are calculated from Stockfish
+                        evaluation changes. They are
+                        custom calculations and do not
+                        reproduce a proprietary chess site's
+                        exact scoring system.
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+    `;
+
+    renderMoveList();
+    renderPosition();
+
+    // ==================================================
+    // CONTROLS
+    // ==================================================
+
+    document
+        .getElementById("ca-start")
+        .addEventListener(
+            "click",
             () => {
 
-                return new Promise(
-                    (resolve, reject) => {
+                stopAutoplay();
 
-                        // Stop previous search
-                        if (
-                            activeEngineRequest
-                        ) {
+                goToPosition(0);
+            }
+        );
 
-                            try {
+    document
+        .getElementById("ca-prev")
+        .addEventListener(
+            "click",
+            () => {
 
-                                stockfish.postMessage(
-                                    "stop"
-                                );
+                stopAutoplay();
 
-                            } catch (e) {
-                                // Ignore
-                            }
-
-                            activeEngineRequest
-                                .reject(
-                                    new Error(
-                                        "Previous search cancelled."
-                                    )
-                                );
-
-                            activeEngineRequest =
-                                null;
-                        }
-
-                        activeEngineRequest = {
-
-                            resolve:
-                                (engineResult) => {
-
-                                    engineCache.set(
-                                        key,
-                                        engineResult
-                                    );
-
-                                    resolve(
-                                        engineResult
-                                    );
-                                },
-
-                            reject:
-                                reject,
-
-                            evaluation:
-                                null,
-
-                            depth:
-                                0,
-
-                            pv:
-                                ""
-                        };
-
-                        stockfish.postMessage(
-                            `position fen ${fen}`
-                        );
-
-                        stockfish.postMessage(
-                            `go depth ${depth}`
-                        );
-                    }
+                goToPosition(
+                    currentPosition - 1
                 );
             }
         );
+
+    document
+        .getElementById("ca-next")
+        .addEventListener(
+            "click",
+            () => {
+
+                goToPosition(
+                    currentPosition + 1
+                );
+            }
+        );
+
+    document
+        .getElementById("ca-end")
+        .addEventListener(
+            "click",
+            () => {
+
+                stopAutoplay();
+
+                goToPosition(
+                    gameData.positions.length - 1
+                );
+            }
+        );
+
+    document
+        .getElementById("ca-play")
+        .addEventListener(
+            "click",
+            toggleAutoplay
+        );
 }
 
 // ======================================================
-// AUTOMATIC FULL GAME ANALYSIS
+// AUTOMATIC ANALYSIS
 // ======================================================
 
 async function runAutomaticAnalysis() {
@@ -1415,7 +1934,7 @@ async function runAutomaticAnalysis() {
     try {
 
         // ------------------------------------------------
-        // ENGINE READY
+        // START ENGINE
         // ------------------------------------------------
 
         if (statusElement) {
@@ -1494,7 +2013,7 @@ async function runAutomaticAnalysis() {
             };
 
             // ------------------------------------------------
-            // CLASSIFY THE MOVE THAT LED TO THIS POSITION
+            // CLASSIFY THE MOVE THAT CREATED THIS POSITION
             // ------------------------------------------------
 
             if (i > 0) {
@@ -1519,6 +2038,7 @@ async function runAutomaticAnalysis() {
             // UPDATE UI
             // ------------------------------------------------
 
+            calculateFinalStats();
             updateAnalysisUI();
 
             if (
@@ -1530,7 +2050,7 @@ async function runAutomaticAnalysis() {
         }
 
         // ------------------------------------------------
-        // COMPLETE
+        // FINISHED
         // ------------------------------------------------
 
         gameData.analyzed =
@@ -1540,6 +2060,7 @@ async function runAutomaticAnalysis() {
 
         updateAnalysisUI();
 
+        renderMoveList();
         renderPosition();
 
         if (statusElement) {
@@ -1564,12 +2085,61 @@ async function runAutomaticAnalysis() {
 }
 
 // ======================================================
+// SCORE FROM WHITE PERSPECTIVE
+// ======================================================
+
+function scoreFromWhitePerspective(
+    evaluation,
+    fen
+) {
+
+    if (!evaluation) {
+        return null;
+    }
+
+    let value =
+        Number(
+            evaluation.value
+        );
+
+    // Mate scores become very large values
+    // for graph/comparison purposes.
+    if (
+        evaluation.type === "mate"
+    ) {
+
+        const mateValue =
+            100000 -
+            (
+                Math.abs(value) *
+                100
+            );
+
+        value =
+            value > 0
+                ? mateValue
+                : -mateValue;
+    }
+
+    // UCI score starts from side-to-move perspective.
+    if (
+        fen.split(" ")[1] === "b"
+    ) {
+
+        value =
+            -value;
+    }
+
+    return value;
+}
+
+// ======================================================
 // CLASSIFY MOVE
 // ======================================================
 
 function classifyMove(index) {
 
-    const position =
+    const after =
         gameData.positions[index];
 
     const before =
@@ -1577,7 +2147,7 @@ function classifyMove(index) {
 
     if (
         !before.analysis ||
-        !position.analysis
+        !after.analysis
     ) {
 
         return;
@@ -1587,7 +2157,7 @@ function classifyMove(index) {
         before.analysis.whiteScore;
 
     const afterScore =
-        position.analysis.whiteScore;
+        after.analysis.whiteScore;
 
     if (
         beforeScore === null ||
@@ -1597,20 +2167,18 @@ function classifyMove(index) {
         return;
     }
 
-    // ------------------------------------------------
-    // LOSS FROM PLAYER'S PERSPECTIVE
-    // ------------------------------------------------
-
     let loss;
 
+    // White wants the score to increase.
     if (
-        position.side === "w"
+        after.side === "w"
     ) {
 
         loss =
             beforeScore -
             afterScore;
 
+    // Black wants the score to decrease.
     } else {
 
         loss =
@@ -1618,33 +2186,31 @@ function classifyMove(index) {
             beforeScore;
     }
 
-    // Prevent negative loss
     loss =
         Math.max(
             0,
             loss
         );
 
-    // Convert centipawns to pawns
     const pawnLoss =
         loss / 100;
 
-    position.loss =
+    after.loss =
         pawnLoss;
 
-    position.accuracy =
+    after.accuracy =
         lossToAccuracy(
             pawnLoss
         );
 
-    position.classification =
+    after.classification =
         classifyLoss(
             pawnLoss
         );
 }
 
 // ======================================================
-// CLASSIFICATION
+// MOVE CLASSIFICATION
 // ======================================================
 
 function classifyLoss(loss) {
@@ -1673,7 +2239,7 @@ function classifyLoss(loss) {
 }
 
 // ======================================================
-// MOVE ACCURACY
+// ACCURACY
 // ======================================================
 
 function lossToAccuracy(loss) {
@@ -1698,6 +2264,10 @@ function lossToAccuracy(loss) {
 // ======================================================
 
 function calculateFinalStats() {
+
+    if (!gameData) {
+        return;
+    }
 
     const white =
         createEmptyStats();
@@ -1802,6 +2372,47 @@ function updateAnalysisUI() {
     );
 
     drawEvaluationGraph();
+
+    updateMoveButtonClassifications();
+}
+
+// ======================================================
+// UPDATE MOVE BUTTON COLORS
+// ======================================================
+
+function updateMoveButtonClassifications() {
+
+    const moveButtons =
+        document.querySelectorAll(
+            ".ca-move-button"
+        );
+
+    gameData.positions.forEach(
+        (
+            position,
+            index
+        ) => {
+
+            const button =
+                moveButtons[index];
+
+            if (!button) {
+                return;
+            }
+
+            if (
+                position.classification
+            ) {
+
+                button.dataset.classification =
+                    position.classification;
+
+            } else {
+
+                delete button.dataset.classification;
+            }
+        }
+    );
 }
 
 // ======================================================
@@ -1885,30 +2496,45 @@ function drawEvaluationGraph() {
             "ca-eval-graph"
         );
 
-    if (!svg || !gameData) {
+    if (
+        !svg ||
+        !gameData
+    ) {
+
         return;
     }
 
-    const positions =
-        gameData.positions;
+    const evaluated =
+        gameData.positions.filter(
+            position =>
+                position.analysis &&
+                position.analysis.whiteScore !== null
+        );
+
+    svg.innerHTML = "";
+
+    if (
+        evaluated.length === 0
+    ) {
+
+        return;
+    }
 
     const width = 900;
     const height = 180;
-
     const padding = 12;
 
-    const maxEval = 5;
+    const maxEvaluation =
+        5;
 
     svg.setAttribute(
         "viewBox",
         `0 0 ${width} ${height}`
     );
 
-    svg.innerHTML = "";
-
-    // ------------------------------------------------
+    // --------------------------------------------------
     // ZERO LINE
-    // ------------------------------------------------
+    // --------------------------------------------------
 
     const zeroY =
         height / 2;
@@ -1948,26 +2574,12 @@ function drawEvaluationGraph() {
         zeroLine
     );
 
-    // ------------------------------------------------
+    // --------------------------------------------------
     // POINTS
-    // ------------------------------------------------
-
-    const evaluatedPositions =
-        positions.filter(
-            p =>
-                p.analysis &&
-                p.analysis.whiteScore !== null
-        );
-
-    if (
-        evaluatedPositions.length === 0
-    ) {
-
-        return;
-    }
+    // --------------------------------------------------
 
     const points =
-        evaluatedPositions.map(
+        evaluated.map(
             (
                 position,
                 index
@@ -1976,11 +2588,11 @@ function drawEvaluationGraph() {
                 const score =
                     position.analysis.whiteScore;
 
-                const clamped =
+                const pawns =
                     Math.max(
-                        -maxEval,
+                        -maxEvaluation,
                         Math.min(
-                            maxEval,
+                            maxEvaluation,
                             score / 100
                         )
                     );
@@ -1991,7 +2603,7 @@ function drawEvaluationGraph() {
                         index /
                         Math.max(
                             1,
-                            evaluatedPositions.length - 1
+                            evaluated.length - 1
                         )
                     ) *
                     (
@@ -2002,8 +2614,8 @@ function drawEvaluationGraph() {
                 const y =
                     zeroY -
                     (
-                        clamped /
-                        maxEval
+                        pawns /
+                        maxEvaluation
                     ) *
                     (
                         height / 2 -
@@ -2018,22 +2630,22 @@ function drawEvaluationGraph() {
             }
         );
 
-    // ------------------------------------------------
+    // --------------------------------------------------
     // AREA
-    // ------------------------------------------------
+    // --------------------------------------------------
 
-    let pathData =
+    let areaData =
         `M ${points[0].x} ${zeroY} `;
 
     points.forEach(
         point => {
 
-            pathData +=
+            areaData +=
                 `L ${point.x} ${point.y} `;
         }
     );
 
-    pathData +=
+    areaData +=
         `L ${points[points.length - 1].x} ${zeroY} Z`;
 
     const area =
@@ -2044,7 +2656,7 @@ function drawEvaluationGraph() {
 
     area.setAttribute(
         "d",
-        pathData
+        areaData
     );
 
     area.setAttribute(
@@ -2052,13 +2664,11 @@ function drawEvaluationGraph() {
         "rgba(255,255,255,0.08)"
     );
 
-    svg.appendChild(
-        area
-    );
+    svg.appendChild(area);
 
-    // ------------------------------------------------
+    // --------------------------------------------------
     // LINE
-    // ------------------------------------------------
+    // --------------------------------------------------
 
     let lineData = "";
 
@@ -2069,7 +2679,8 @@ function drawEvaluationGraph() {
         ) => {
 
             lineData +=
-                `${index === 0 ? "M" : "L"} ${point.x} ${point.y} `;
+                `${index === 0 ? "M" : "L"} ` +
+                `${point.x} ${point.y} `;
         }
     );
 
@@ -2109,13 +2720,11 @@ function drawEvaluationGraph() {
         "round"
     );
 
-    svg.appendChild(
-        line
-    );
+    svg.appendChild(line);
 
-    // ------------------------------------------------
-    // MOVE DOTS
-    // ------------------------------------------------
+    // --------------------------------------------------
+    // DOTS
+    // --------------------------------------------------
 
     points.forEach(
         point => {
@@ -2129,34 +2738,35 @@ function drawEvaluationGraph() {
             if (
                 classification === "Best"
             ) {
+
                 dotColor =
                     "#a9d34f";
-            }
 
-            if (
+            } else if (
                 classification === "Excellent"
             ) {
+
                 dotColor =
                     "#6bd15c";
-            }
 
-            if (
+            } else if (
                 classification === "Inaccuracy"
             ) {
+
                 dotColor =
                     "#ffd03c";
-            }
 
-            if (
+            } else if (
                 classification === "Mistake"
             ) {
+
                 dotColor =
                     "#ff9c45";
-            }
 
-            if (
+            } else if (
                 classification === "Blunder"
             ) {
+
                 dotColor =
                     "#ff4e4e";
             }
@@ -2189,644 +2799,313 @@ function drawEvaluationGraph() {
                 dotColor
             );
 
-            svg.appendChild(
-                circle
-            );
+            svg.appendChild(circle);
         }
     );
 }
 
 // ======================================================
-// MAIN UI
+// UPDATE CURRENT POSITION ENGINE DATA
 // ======================================================
 
-function renderAnalyzer() {
-
-    const headers =
-        gameData.headers;
-
-    result.innerHTML = `
-
-        <div class="ca-wrapper">
-
-            <!-- GAME INFO -->
-
-            <div class="ca-game-info">
-
-                <div class="ca-info-card">
-                    <span class="ca-info-label">
-                        White
-                    </span>
-
-                    <span class="ca-info-value">
-                        ${escapeHtml(
-                            headers.White ||
-                            "Unknown"
-                        )}
-                    </span>
-                </div>
-
-                <div class="ca-info-card">
-                    <span class="ca-info-label">
-                        Black
-                    </span>
-
-                    <span class="ca-info-value">
-                        ${escapeHtml(
-                            headers.Black ||
-                            "Unknown"
-                        )}
-                    </span>
-                </div>
-
-                <div class="ca-info-card">
-                    <span class="ca-info-label">
-                        Result
-                    </span>
-
-                    <span class="ca-info-value">
-                        ${escapeHtml(
-                            headers.Result ||
-                            "Unknown"
-                        )}
-                    </span>
-                </div>
-
-                <div class="ca-info-card">
-                    <span class="ca-info-label">
-                        White Rating
-                    </span>
-
-                    <span class="ca-info-value">
-                        ${escapeHtml(
-                            headers.WhiteElo ||
-                            "Unknown"
-                        )}
-                    </span>
-                </div>
-
-                <div class="ca-info-card">
-                    <span class="ca-info-label">
-                        Black Rating
-                    </span>
-
-                    <span class="ca-info-value">
-                        ${escapeHtml(
-                            headers.BlackElo ||
-                            "Unknown"
-                        )}
-                    </span>
-                </div>
-
-                <div class="ca-info-card">
-                    <span class="ca-info-label">
-                        Moves
-                    </span>
-
-                    <span class="ca-info-value">
-                        ${gameData.moves.length}
-                    </span>
-                </div>
-
-            </div>
-
-            <!-- ANALYZER -->
-
-            <div class="ca-analyzer">
-
-                <!-- LEFT -->
-
-                <div class="ca-board-area">
-
-                    <div
-                        id="ca-board"
-                        class="ca-board">
-                    </div>
-
-                    <div
-                        id="ca-board-caption"
-                        class="ca-board-caption">
-                    </div>
-
-                    <div class="ca-controls">
-
-                        <button
-                            id="ca-start"
-                            class="ca-control">
-                            ⏮ Start
-                        </button>
-
-                        <button
-                            id="ca-prev"
-                            class="ca-control">
-                            ◀ Previous
-                        </button>
-
-                        <button
-                            id="ca-play"
-                            class="ca-control">
-                            ▶ Play
-                        </button>
-
-                        <button
-                            id="ca-next"
-                            class="ca-control">
-                            Next ▶
-                        </button>
-
-                        <button
-                            id="ca-end"
-                            class="ca-control">
-                            End ⏭
-                        </button>
-
-                    </div>
-
-                </div>
-
-                <!-- RIGHT -->
-
-                <div class="ca-panel">
-
-                    <h2 class="ca-panel-title">
-                        Game Analysis
-                    </h2>
-
-                    <!-- PROGRESS -->
-
-                    <div class="ca-progress-box">
-
-                        <div
-                            id="ca-engine-status"
-                            class="ca-engine-status">
-
-                            ⏳ Preparing Stockfish...
-
-                        </div>
-
-                        <div
-                            class="ca-progress-track">
-
-                            <div
-                                id="ca-progress-fill"
-                                class="ca-progress-fill">
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                    <!-- GRAPH -->
-
-                    <div class="ca-evaluation">
-
-                        <div class="ca-evaluation-header">
-                            Evaluation
-                        </div>
-
-                        <svg
-                            id="ca-eval-graph"
-                            viewBox="0 0 900 180"
-                            preserveAspectRatio="none">
-                        </svg>
-
-                    </div>
-
-                    <!-- ACCURACY -->
-
-                    <div class="ca-accuracy-grid">
-
-                        <div class="ca-accuracy-card">
-
-                            <span
-                                class="ca-accuracy-player">
-
-                                ${escapeHtml(
-                                    headers.White ||
-                                    "White"
-                                )}
-
-                            </span>
-
-                            <span
-                                id="ca-white-accuracy"
-                                class="ca-accuracy-value">
-
-                                —
-
-                            </span>
-
-                        </div>
-
-                        <div class="ca-accuracy-card">
-
-                            <span
-                                class="ca-accuracy-player">
-
-                                ${escapeHtml(
-                                    headers.Black ||
-                                    "Black"
-                                )}
-
-                            </span>
-
-                            <span
-                                id="ca-black-accuracy"
-                                class="ca-accuracy-value">
-
-                                —
-
-                            </span>
-
-                        </div>
-
-                    </div>
-
-                    <!-- CURRENT MOVE -->
-
-                    <div class="ca-current-move"
-                         style="margin-top:15px;">
-
-                        <div class="ca-current-move-label">
-                            Current Move
-                        </div>
-
-                        <div
-                            id="ca-current-move"
-                            class="ca-current-move-value">
-
-                        </div>
-
-                    </div>
-
-                    <!-- ENGINE -->
-
-                    <div class="ca-engine-grid">
-
-                        <div class="ca-engine-stat">
-
-                            <span
-                                class="ca-engine-stat-label">
-                                Evaluation
-                            </span>
-
-                            <span
-                                id="ca-engine-evaluation"
-                                class="ca-engine-stat-value">
-
-                                —
-
-                            </span>
-
-                        </div>
-
-                        <div class="ca-engine-stat">
-
-                            <span
-                                class="ca-engine-stat-label">
-                                Best Move
-                            </span>
-
-                            <span
-                                id="ca-engine-best"
-                                class="ca-engine-stat-value">
-
-                                —
-
-                            </span>
-
-                        </div>
-
-                        <div class="ca-engine-stat">
-
-                            <span
-                                class="ca-engine-stat-label">
-                                Depth
-                            </span>
-
-                            <span
-                                id="ca-engine-depth"
-                                class="ca-engine-stat-value">
-
-                                —
-
-                            </span>
-
-                        </div>
-
-                        <div class="ca-engine-stat">
-
-                            <span
-                                class="ca-engine-stat-label">
-                                Move Quality
-                            </span>
-
-                            <span
-                                id="ca-engine-quality"
-                                class="ca-engine-stat-value">
-
-                                —
-
-                            </span>
-
-                        </div>
-
-                    </div>
-
-                    <!-- COUNTS -->
-
-                    <div class="ca-fen-box">
-
-                        <span class="ca-fen-label">
-                            White Moves
-                        </span>
-
-                        <div
-                            id="ca-white-counts"
-                            class="ca-count-grid">
-                        </div>
-
-                    </div>
-
-                    <div class="ca-fen-box">
-
-                        <span class="ca-fen-label">
-                            Black Moves
-                        </span>
-
-                        <div
-                            id="ca-black-counts"
-                            class="ca-count-grid">
-                        </div>
-
-                    </div>
-
-                    <!-- MOVES -->
-
-                    <div class="ca-fen-box">
-
-                        <span class="ca-fen-label">
-                            Moves
-                        </span>
-
-                        <div
-                            id="ca-move-list"
-                            class="ca-move-list">
-                        </div>
-
-                    </div>
-
-                    <!-- FEN -->
-
-                    <div class="ca-fen-box">
-
-                        <span class="ca-fen-label">
-                            Current FEN
-                        </span>
-
-                        <code
-                            id="ca-fen"
-                            class="ca-fen">
-                        </code>
-
-                    </div>
-
-                    <!-- PV -->
-
-                    <div class="ca-fen-box">
-
-                        <span class="ca-fen-label">
-                            Principal Variation
-                        </span>
-
-                        <code
-                            id="ca-engine-pv"
-                            class="ca-fen">
-                            —
-                        </code>
-
-                    </div>
-
-                    <div class="ca-analysis-note">
-
-                        Estimated accuracy and move
-                        classifications are calculated
-                        from Stockfish evaluation loss.
-                        They are not intended to reproduce
-                        Chess.com's proprietary scoring.
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-    `;
-
-    renderMoveList();
-
-    renderPosition();
-
-    // ==================================================
-    // CONTROLS
-    // ==================================================
-
-    document
-        .getElementById("ca-start")
-        .addEventListener(
-            "click",
-            () => {
-
-                stopAutoplay();
-
-                goToPosition(0);
-            }
-        );
-
-    document
-        .getElementById("ca-prev")
-        .addEventListener(
-            "click",
-            () => {
-
-                stopAutoplay();
-
-                goToPosition(
-                    currentPosition - 1
-                );
-            }
-        );
-
-    document
-        .getElementById("ca-next")
-        .addEventListener(
-            "click",
-            () => {
-
-                goToPosition(
-                    currentPosition + 1
-                );
-            }
-        );
-
-    document
-        .getElementById("ca-end")
-        .addEventListener(
-            "click",
-            () => {
-
-                stopAutoplay();
-
-                goToPosition(
-                    gameData.positions.length - 1
-                );
-            }
-        );
-
-    document
-        .getElementById("ca-play")
-        .addEventListener(
-            "click",
-            toggleAutoplay
-        );
-}
-
-// ======================================================
-// MOVE LIST
-// ======================================================
-
-function renderMoveList() {
-
-    const moveList =
-        document.getElementById(
-            "ca-move-list"
-        );
-
-    if (!moveList) {
-        return;
-    }
-
-    moveList.innerHTML = "";
-
-    // Start
-    const startButton =
-        document.createElement(
-            "button"
-        );
-
-    startButton.className =
-        "ca-move-button";
-
-    startButton.textContent =
-        "Start";
-
-    startButton.addEventListener(
-        "click",
-        () => {
-
-            stopAutoplay();
-
-            goToPosition(0);
-        }
-    );
-
-    moveList.appendChild(
-        startButton
-    );
-
-    // Moves
-    gameData.positions.forEach(
-        (
-            position,
-            index
-        ) => {
-
-            if (index === 0) {
-                return;
-            }
-
-            const button =
-                document.createElement(
-                    "button"
-                );
-
-            button.className =
-                "ca-move-button";
-
-            if (
-                position.classification
-            ) {
-
-                button.dataset.classification =
-                    position.classification;
-            }
-
-            const moveLabel =
-                position.side === "w"
-                    ? `${position.moveNumber}.`
-                    : `${position.moveNumber}...`;
-
-            button.innerHTML = `
-
-                <span
-                    class="ca-move-number">
-
-                    ${moveLabel}
-
-                </span>
-
-                ${escapeHtml(
-                    position.san
-                )}
-            `;
-
-            button.addEventListener(
-                "click",
-                () => {
-
-                    stopAutoplay();
-
-                    goToPosition(
-                        index
-                    );
-                }
-            );
-
-            moveList.appendChild(
-                button
-            );
-        }
-    );
-}
-
-// ======================================================
-// GO TO POSITION
-// ======================================================
-
-function goToPosition(index) {
+function updateCurrentEnginePanel() {
 
     if (!gameData) {
         return;
     }
 
-    if (index < 0) {
-        index = 0;
+    const position =
+        gameData.positions[
+            currentPosition
+        ];
+
+    const evaluationElement =
+        document.getElementById(
+            "ca-engine-evaluation"
+        );
+
+    const bestElement =
+        document.getElementById(
+            "ca-engine-best"
+        );
+
+    const playedElement =
+        document.getElementById(
+            "ca-engine-played"
+        );
+
+    const qualityElement =
+        document.getElementById(
+            "ca-engine-quality"
+        );
+
+    const pvElement =
+        document.getElementById(
+            "ca-engine-pv"
+        );
+
+    // Starting position
+    if (
+        currentPosition === 0
+    ) {
+
+        if (evaluationElement) {
+            evaluationElement.textContent =
+                position.analysis
+                    ? formatEngineScore(
+                        position.analysis.evaluation,
+                        position.fen
+                    )
+                    : "Analyzing...";
+        }
+
+        if (bestElement) {
+
+            bestElement.textContent =
+                position.analysis
+                    ? convertBestMoveToSan(
+                        position.fen,
+                        position.analysis.bestMove
+                    )
+                    : "Analyzing...";
+        }
+
+        if (playedElement) {
+            playedElement.textContent =
+                "—";
+        }
+
+        if (qualityElement) {
+            qualityElement.textContent =
+                "Starting Position";
+        }
+
+        if (pvElement) {
+
+            pvElement.textContent =
+                position.analysis
+                    ? convertPvToSan(
+                        position.fen,
+                        position.analysis.pv
+                    )
+                    : "—";
+        }
+
+        return;
+    }
+
+    // --------------------------------------------------
+    // For a move, use the ENGINE RESULT BEFORE
+    // THE MOVE to determine the best move.
+    // --------------------------------------------------
+
+    const before =
+        gameData.positions[
+            currentPosition - 1
+        ];
+
+    const after =
+        gameData.positions[
+            currentPosition
+        ];
+
+    // Evaluation after the move
+    if (evaluationElement) {
+
+        evaluationElement.textContent =
+            after.analysis
+                ? formatEngineScore(
+                    after.analysis.evaluation,
+                    after.fen
+                )
+                : "Analyzing...";
+    }
+
+    // Best move BEFORE the player's move
+    if (bestElement) {
+
+        bestElement.textContent =
+            before.analysis
+                ? convertBestMoveToSan(
+                    before.fen,
+                    before.analysis.bestMove
+                )
+                : "Analyzing...";
+    }
+
+    // Actual move played
+    if (playedElement) {
+
+        playedElement.textContent =
+            after.san;
+    }
+
+    // Classification
+    if (qualityElement) {
+
+        qualityElement.textContent =
+            after.classification
+                ? `${after.classification} • ${after.loss.toFixed(2)}`
+                : "Analyzing...";
+    }
+
+    // Principal variation BEFORE move
+    if (pvElement) {
+
+        pvElement.textContent =
+            before.analysis
+                ? convertPvToSan(
+                    before.fen,
+                    before.analysis.pv
+                )
+                : "—";
+    }
+}
+
+// ======================================================
+// EVALUATION SIDEBAR
+// ======================================================
+
+function updateEvaluationSidebar() {
+
+    const label =
+        document.getElementById(
+            "ca-eval-label"
+        );
+
+    const fill =
+        document.getElementById(
+            "ca-eval-bar-fill"
+        );
+
+    if (!label || !fill) {
+        return;
+    }
+
+    if (!gameData) {
+
+        label.textContent =
+            "Waiting";
+
+        fill.style.height =
+            "50%";
+
+        return;
+    }
+
+    const position =
+        gameData.positions[
+            currentPosition
+        ];
+
+    if (
+        !position.analysis ||
+        position.analysis.whiteScore === null
+    ) {
+
+        label.textContent =
+            "Analyzing";
+
+        fill.style.height =
+            "50%";
+
+        return;
+    }
+
+    const whiteScore =
+        position.analysis.whiteScore;
+
+    const whitePawns =
+        whiteScore / 100;
+
+    // --------------------------------------------------
+    // Convert evaluation into bar percentage.
+    //
+    // -5 = mostly Black
+    //  0 = equal
+    // +5 = mostly White
+    // --------------------------------------------------
+
+    const clamped =
+        Math.max(
+            -5,
+            Math.min(
+                5,
+                whitePawns
+            )
+        );
+
+    const whitePercent =
+        50 +
+        (
+            Math.tanh(
+                clamped / 2
+            ) *
+            45
+        );
+
+    fill.style.height =
+        `${whitePercent}%`;
+
+    // --------------------------------------------------
+    // Label
+    // --------------------------------------------------
+
+    if (
+        position.analysis.evaluation &&
+        position.analysis.evaluation.type ===
+            "mate"
+    ) {
+
+        const mateScore =
+            position.analysis.evaluation.value;
+
+        let whiteMateScore =
+            mateScore;
+
+        if (
+            position.fen.split(" ")[1] === "b"
+        ) {
+
+            whiteMateScore =
+                -mateScore;
+        }
+
+        if (
+            whiteMateScore > 0
+        ) {
+
+            label.textContent =
+                "WHITE • MATE";
+
+        } else {
+
+            label.textContent =
+                "BLACK • MATE";
+        }
+
+        return;
     }
 
     if (
-        index >=
-        gameData.positions.length
+        whiteScore > 100
     ) {
 
-        index =
-            gameData.positions.length - 1;
+        label.textContent =
+            `WHITE • +${whitePawns.toFixed(2)}`;
+
+    } else if (
+        whiteScore < -100
+    ) {
+
+        label.textContent =
+            `BLACK • ${whitePawns.toFixed(2)}`;
+
+    } else {
+
+        label.textContent =
+            `EQUAL • ${whitePawns >= 0 ? "+" : ""}${whitePawns.toFixed(2)}`;
     }
-
-    currentPosition =
-        index;
-
-    renderPosition();
 }
 
 // ======================================================
@@ -2869,123 +3148,19 @@ function renderPosition() {
     }
 
     // ==================================================
-    // ENGINE PANEL
+    // UPDATE SIDEBAR
     // ==================================================
 
-    const evaluationElement =
-        document.getElementById(
-            "ca-engine-evaluation"
-        );
-
-    const bestElement =
-        document.getElementById(
-            "ca-engine-best"
-        );
-
-    const depthElement =
-        document.getElementById(
-            "ca-engine-depth"
-        );
-
-    const qualityElement =
-        document.getElementById(
-            "ca-engine-quality"
-        );
-
-    const pvElement =
-        document.getElementById(
-            "ca-engine-pv"
-        );
-
-    if (
-        position.analysis
-    ) {
-
-        if (evaluationElement) {
-
-            evaluationElement.textContent =
-                formatEngineScore(
-                    position.analysis.evaluation,
-                    position.fen
-                );
-        }
-
-        if (bestElement) {
-
-            bestElement.textContent =
-                convertBestMoveToSan(
-                    position.fen,
-                    position.analysis.bestMove
-                );
-        }
-
-        if (depthElement) {
-
-            depthElement.textContent =
-                position.analysis.depth ||
-                "—";
-        }
-
-        if (pvElement) {
-
-            pvElement.textContent =
-                convertPvToSan(
-                    position.fen,
-                    position.analysis.pv
-                );
-        }
-
-        if (qualityElement) {
-
-            if (
-                position.classification
-            ) {
-
-                qualityElement.textContent =
-                    `${position.classification} (${position.loss.toFixed(2)})`;
-
-            } else {
-
-                qualityElement.textContent =
-                    currentPosition === 0
-                        ? "Starting Position"
-                        : "Calculating...";
-            }
-        }
-
-    } else {
-
-        if (evaluationElement) {
-            evaluationElement.textContent =
-                "Analyzing...";
-        }
-
-        if (bestElement) {
-            bestElement.textContent =
-                "Analyzing...";
-        }
-
-        if (depthElement) {
-            depthElement.textContent =
-                "—";
-        }
-
-        if (pvElement) {
-            pvElement.textContent =
-                "—";
-        }
-
-        if (qualityElement) {
-
-            qualityElement.textContent =
-                currentPosition === 0
-                    ? "Starting Position"
-                    : "Waiting...";
-        }
-    }
+    updateEvaluationSidebar();
 
     // ==================================================
-    // CHESS.JS
+    // UPDATE ENGINE PANEL
+    // ==================================================
+
+    updateCurrentEnginePanel();
+
+    // ==================================================
+    // LOAD FEN
     // ==================================================
 
     const chess =
@@ -3006,6 +3181,10 @@ function renderPosition() {
         return;
     }
 
+    // ==================================================
+    // BOARD
+    // ==================================================
+
     const board =
         chess.board();
 
@@ -3013,7 +3192,7 @@ function renderPosition() {
         "";
 
     // ==================================================
-    // KING CHECK
+    // KING IN CHECK
     // ==================================================
 
     let checkedKingSquare =
@@ -3059,7 +3238,7 @@ function renderPosition() {
     }
 
     // ==================================================
-    // BOARD SQUARES
+    // DRAW 64 SQUARES
     // ==================================================
 
     for (
@@ -3092,6 +3271,7 @@ function renderPosition() {
                 "ca-square"
             );
 
+            // Board colors
             if (
                 (row + col) % 2 === 0
             ) {
@@ -3107,7 +3287,10 @@ function renderPosition() {
                 );
             }
 
-            // FROM
+            // ------------------------------------------------
+            // LAST MOVE FROM
+            // ------------------------------------------------
+
             if (
                 position.from &&
                 squareName ===
@@ -3119,7 +3302,10 @@ function renderPosition() {
                 );
             }
 
-            // TO
+            // ------------------------------------------------
+            // LAST MOVE TO
+            // ------------------------------------------------
+
             if (
                 position.to &&
                 squareName ===
@@ -3131,7 +3317,10 @@ function renderPosition() {
                 );
             }
 
+            // ------------------------------------------------
             // CHECK
+            // ------------------------------------------------
+
             if (
                 squareName ===
                     checkedKingSquare
@@ -3142,7 +3331,10 @@ function renderPosition() {
                 );
             }
 
+            // ------------------------------------------------
             // FILE
+            // ------------------------------------------------
+
             if (
                 row === 7
             ) {
@@ -3165,7 +3357,10 @@ function renderPosition() {
                 );
             }
 
+            // ------------------------------------------------
             // RANK
+            // ------------------------------------------------
+
             if (
                 col === 0
             ) {
@@ -3186,7 +3381,10 @@ function renderPosition() {
                 );
             }
 
+            // ------------------------------------------------
             // PIECE
+            // ------------------------------------------------
+
             if (piece) {
 
                 const pieceElement =
@@ -3203,6 +3401,29 @@ function renderPosition() {
                         piece.type
                     );
 
+                // --------------------------------------------
+                // MARK THE PIECE THAT JUST MOVED
+                // --------------------------------------------
+
+                if (
+                    position.to &&
+                    squareName ===
+                        position.to
+                ) {
+
+                    const marker =
+                        document.createElement(
+                            "span"
+                        );
+
+                    marker.className =
+                        "ca-move-marker";
+
+                    pieceElement.appendChild(
+                        marker
+                    );
+                }
+
                 square.appendChild(
                     pieceElement
                 );
@@ -3215,20 +3436,17 @@ function renderPosition() {
     }
 
     // ==================================================
-    // MOVE TEXT
+    // CURRENT MOVE
     // ==================================================
 
     if (
-        currentPosition === 0
+        currentMoveElement
     ) {
 
         currentMoveElement.textContent =
-            "Starting Position";
-
-    } else {
-
-        currentMoveElement.textContent =
-            position.label;
+            currentPosition === 0
+                ? "Starting Position"
+                : position.label;
     }
 
     // ==================================================
@@ -3240,17 +3458,29 @@ function renderPosition() {
             ? "White"
             : "Black";
 
-    captionElement.textContent =
-        currentPosition === 0
-            ? "Initial chess position"
-            : `${position.label} • ${turnName} to move`;
+    if (
+        captionElement
+    ) {
+
+        captionElement.textContent =
+            currentPosition === 0
+
+                ? "Initial chess position"
+
+                : `${position.label} • ${turnName} to move`;
+    }
 
     // ==================================================
     // FEN
     // ==================================================
 
-    fenElement.textContent =
-        position.fen;
+    if (
+        fenElement
+    ) {
+
+        fenElement.textContent =
+            position.fen;
+    }
 
     // ==================================================
     // ACTIVE MOVE
@@ -3284,228 +3514,213 @@ function renderPosition() {
     );
 
     // ==================================================
-    // AUTO SCROLL
+    // IMPORTANT:
+    // NO scrollIntoView()
+    //
+    // The page will remain where it is when you press
+    // Next / Previous.
     // ==================================================
 
-    const activeButton =
-        document.querySelector(
-            ".ca-move-button.ca-active"
-        );
+    // ==================================================
+    // STATUS
+    // ==================================================
 
-    if (activeButton) {
-
-        activeButton.scrollIntoView({
-            behavior: "smooth",
-            block: "nearest",
-            inline: "nearest"
-        });
-    }
-}
-
-// ======================================================
-// SCORE FORMATTING
-// ======================================================
-
-function formatEngineScore(
-    evaluation,
-    fen
-) {
-
-    if (!evaluation) {
-        return "Calculating...";
-    }
-
-    let value =
-        Number(
-            evaluation.value
+    const statusElement =
+        document.getElementById(
+            "ca-engine-status"
         );
 
     if (
-        fen.split(" ")[1] === "b"
+        statusElement &&
+        gameData.analyzed
     ) {
-
-        value = -value;
-    }
-
-    if (
-        evaluation.type ===
-        "mate"
-    ) {
-
-        const side =
-            value > 0
-                ? "White"
-                : "Black";
-
-        return `Mate ${side} in ${Math.abs(value)}`;
-    }
-
-    const pawns =
-        value / 100;
-
-    return pawns >= 0
-        ? `+${pawns.toFixed(2)}`
-        : pawns.toFixed(2);
-}
-
-// ======================================================
-// UCI → SAN
-// ======================================================
-
-function convertBestMoveToSan(
-    fen,
-    uciMove
-) {
-
-    if (
-        !uciMove ||
-        uciMove === "(none)"
-    ) {
-
-        return "—";
-    }
-
-    try {
-
-        const chess =
-            new Chess();
 
         if (
-            !chess.load(fen)
+            chess.in_checkmate()
         ) {
 
-            return uciMove;
+            statusElement.textContent =
+                "♟ Checkmate position";
+
+        } else if (
+            chess.in_stalemate()
+        ) {
+
+            statusElement.textContent =
+                "Draw by stalemate";
+
+        } else if (
+            chess.in_draw()
+        ) {
+
+            statusElement.textContent =
+                "Draw position";
+
+        } else if (
+            chess.in_check()
+        ) {
+
+            statusElement.textContent =
+                `${turnName} is in check`;
+
+        } else {
+
+            statusElement.textContent =
+                `${turnName} to move`;
         }
-
-        const from =
-            uciMove.substring(
-                0,
-                2
-            );
-
-        const to =
-            uciMove.substring(
-                2,
-                4
-            );
-
-        const promotion =
-            uciMove.length >= 5
-                ? uciMove[4]
-                : undefined;
-
-        const move =
-            chess.move({
-
-                from:
-                    from,
-
-                to:
-                    to,
-
-                promotion:
-                    promotion
-            });
-
-        return move
-            ? move.san
-            : uciMove;
-
-    } catch (error) {
-
-        return uciMove;
     }
 }
 
 // ======================================================
-// PV → SAN
+// MOVE LIST
 // ======================================================
 
-function convertPvToSan(
-    fen,
-    pv
-) {
+function renderMoveList() {
 
-    if (!pv) {
-        return "—";
+    const moveList =
+        document.getElementById(
+            "ca-move-list"
+        );
+
+    if (!moveList || !gameData) {
+        return;
     }
 
-    try {
+    moveList.innerHTML =
+        "";
 
-        const chess =
-            new Chess();
+    // --------------------------------------------------
+    // START
+    // --------------------------------------------------
 
-        if (
-            !chess.load(fen)
-        ) {
+    const startButton =
+        document.createElement(
+            "button"
+        );
 
-            return pv;
+    startButton.className =
+        "ca-move-button";
+
+    startButton.textContent =
+        "Start";
+
+    startButton.addEventListener(
+        "click",
+        () => {
+
+            stopAutoplay();
+
+            goToPosition(0);
         }
+    );
 
-        const uciMoves =
-            pv.split(/\s+/);
+    moveList.appendChild(
+        startButton
+    );
 
-        const sanMoves = [];
+    // --------------------------------------------------
+    // MOVES
+    // --------------------------------------------------
 
-        for (
-            let i = 0;
-            i < uciMoves.length;
-            i++
-        ) {
-
-            const uci =
-                uciMoves[i];
+    gameData.positions.forEach(
+        (
+            position,
+            index
+        ) => {
 
             if (
-                uci.length < 4
+                index === 0
             ) {
 
-                break;
+                return;
             }
 
-            const from =
-                uci.substring(
-                    0,
-                    2
+            const button =
+                document.createElement(
+                    "button"
                 );
 
-            const to =
-                uci.substring(
-                    2,
-                    4
-                );
+            button.className =
+                "ca-move-button";
 
-            const promotion =
-                uci.length >= 5
-                    ? uci[4]
-                    : undefined;
+            if (
+                position.classification
+            ) {
 
-            const move =
-                chess.move({
-
-                    from,
-                    to,
-
-                    promotion
-                });
-
-            if (!move) {
-                break;
+                button.dataset.classification =
+                    position.classification;
             }
 
-            sanMoves.push(
-                move.san
+            const moveLabel =
+                position.side === "w"
+
+                    ? `${position.moveNumber}.`
+
+                    : `${position.moveNumber}...`;
+
+            button.innerHTML = `
+
+                <span
+                    class="ca-move-number">
+
+                    ${moveLabel}
+
+                </span>
+
+                ${escapeHtml(
+                    position.san
+                )}
+            `;
+
+            button.addEventListener(
+                "click",
+                () => {
+
+                    stopAutoplay();
+
+                    goToPosition(
+                        index
+                    );
+                }
+            );
+
+            moveList.appendChild(
+                button
             );
         }
+    );
+}
 
-        return sanMoves.length
-            ? sanMoves.join(" ")
-            : pv;
+// ======================================================
+// GO TO POSITION
+// ======================================================
 
-    } catch (error) {
+function goToPosition(index) {
 
-        return pv;
+    if (!gameData) {
+        return;
     }
+
+    if (
+        index < 0
+    ) {
+
+        index = 0;
+    }
+
+    if (
+        index >=
+        gameData.positions.length
+    ) {
+
+        index =
+            gameData.positions.length - 1;
+    }
+
+    currentPosition =
+        index;
+
+    renderPosition();
 }
 
 // ======================================================
@@ -3543,7 +3758,7 @@ function getUnicodePiece(
 }
 
 // ======================================================
-// AUTOPLAY
+// PLAY / PAUSE
 // ======================================================
 
 function toggleAutoplay() {
@@ -3552,6 +3767,10 @@ function toggleAutoplay() {
         document.getElementById(
             "ca-play"
         );
+
+    if (!playButton) {
+        return;
+    }
 
     if (
         autoplayTimer
@@ -3619,7 +3838,7 @@ function stopAutoplay() {
 }
 
 // ======================================================
-// KEYBOARD
+// KEYBOARD CONTROLS
 // ======================================================
 
 document.addEventListener(
@@ -3630,11 +3849,14 @@ document.addEventListener(
             return;
         }
 
+        // Don't interfere with PGN typing
         if (
             document.activeElement ===
                 pgnInput ||
+
             document.activeElement.tagName ===
                 "TEXTAREA" ||
+
             document.activeElement.tagName ===
                 "INPUT"
         ) {
@@ -3684,3 +3906,604 @@ document.addEventListener(
         }
     }
 );
+
+// ======================================================
+// STOCKFISH INITIALIZATION
+// ======================================================
+
+function initStockfish() {
+
+    if (enginePromise) {
+        return enginePromise;
+    }
+
+    enginePromise =
+        new Promise(
+            (resolve, reject) => {
+
+                try {
+
+                    stockfish =
+                        new Worker(
+                            "engine/stockfish-19-lite-single.js"
+                        );
+
+                } catch (error) {
+
+                    enginePromise =
+                        null;
+
+                    reject(error);
+
+                    return;
+                }
+
+                let gotUciOk = false;
+
+                const timeout =
+                    setTimeout(
+                        () => {
+
+                            enginePromise =
+                                null;
+
+                            try {
+
+                                stockfish.terminate();
+
+                            } catch (e) {
+                                // Ignore
+                            }
+
+                            reject(
+                                new Error(
+                                    "Stockfish initialization timeout."
+                                )
+                            );
+
+                        },
+                        20000
+                    );
+
+                stockfish.onmessage =
+                    event => {
+
+                        const line =
+                            String(
+                                event.data
+                            ).trim();
+
+                        console.log(
+                            "[Stockfish]",
+                            line
+                        );
+
+                        // --------------------------
+                        // UCI OK
+                        // --------------------------
+
+                        if (
+                            line ===
+                            "uciok"
+                        ) {
+
+                            gotUciOk =
+                                true;
+
+                            stockfish.postMessage(
+                                "isready"
+                            );
+
+                            return;
+                        }
+
+                        // --------------------------
+                        // READY OK
+                        // --------------------------
+
+                        if (
+                            line ===
+                                "readyok" &&
+                            gotUciOk
+                        ) {
+
+                            clearTimeout(
+                                timeout
+                            );
+
+                            resolve();
+
+                            return;
+                        }
+
+                        // --------------------------
+                        // INFO
+                        // --------------------------
+
+                        if (
+                            activeEngineRequest &&
+                            line.startsWith(
+                                "info "
+                            )
+                        ) {
+
+                            parseEngineInfo(
+                                line
+                            );
+
+                            return;
+                        }
+
+                        // --------------------------
+                        // BESTMOVE
+                        // --------------------------
+
+                        if (
+                            activeEngineRequest &&
+                            line.startsWith(
+                                "bestmove "
+                            )
+                        ) {
+
+                            const request =
+                                activeEngineRequest;
+
+                            activeEngineRequest =
+                                null;
+
+                            const parts =
+                                line.split(
+                                    /\s+/
+                                );
+
+                            request.resolve({
+
+                                bestMove:
+                                    parts[1] ||
+                                    null,
+
+                                evaluation:
+                                    request.evaluation,
+
+                                depth:
+                                    request.depth,
+
+                                pv:
+                                    request.pv
+                            });
+
+                            return;
+                        }
+                    };
+
+                stockfish.onerror =
+                    error => {
+
+                        console.error(
+                            "Stockfish worker error:",
+                            error
+                        );
+
+                        if (
+                            activeEngineRequest
+                        ) {
+
+                            activeEngineRequest.reject(
+                                error
+                            );
+
+                            activeEngineRequest =
+                                null;
+                        }
+
+                        enginePromise =
+                            null;
+
+                        reject(error);
+                    };
+
+                // Start UCI
+                stockfish.postMessage(
+                    "uci"
+                );
+            }
+        );
+
+    return enginePromise;
+}
+
+// ======================================================
+// PARSE STOCKFISH INFO
+// ======================================================
+
+function parseEngineInfo(line) {
+
+    if (!activeEngineRequest) {
+        return;
+    }
+
+    // DEPTH
+    const depthMatch =
+        line.match(
+            /\bdepth\s+(\d+)/
+        );
+
+    if (depthMatch) {
+
+        activeEngineRequest.depth =
+            Number(
+                depthMatch[1]
+            );
+    }
+
+    // SCORE
+    const scoreMatch =
+        line.match(
+            /\bscore\s+(cp|mate)\s+(-?\d+)/
+        );
+
+    if (scoreMatch) {
+
+        activeEngineRequest.evaluation = {
+
+            type:
+                scoreMatch[1],
+
+            value:
+                Number(
+                    scoreMatch[2]
+                )
+        };
+    }
+
+    // PV
+    const pvMatch =
+        line.match(
+            /\bpv\s+(.+)$/
+        );
+
+    if (pvMatch) {
+
+        activeEngineRequest.pv =
+            pvMatch[1].trim();
+    }
+}
+
+// ======================================================
+// EVALUATE FEN
+// ======================================================
+
+function evaluateFen(
+    fen,
+    depth = ENGINE_DEPTH
+) {
+
+    const cacheKey =
+        `${fen}|${depth}`;
+
+    // Use cached result if available
+    if (
+        engineCache.has(
+            cacheKey
+        )
+    ) {
+
+        return Promise.resolve(
+            engineCache.get(
+                cacheKey
+            )
+        );
+    }
+
+    return initStockfish()
+        .then(
+            () => {
+
+                return new Promise(
+                    (
+                        resolve,
+                        reject
+                    ) => {
+
+                        // Cancel previous search
+                        if (
+                            activeEngineRequest
+                        ) {
+
+                            try {
+
+                                stockfish.postMessage(
+                                    "stop"
+                                );
+
+                            } catch (e) {
+                                // Ignore
+                            }
+
+                            activeEngineRequest
+                                .reject(
+                                    new Error(
+                                        "Previous analysis cancelled."
+                                    )
+                                );
+
+                            activeEngineRequest =
+                                null;
+                        }
+
+                        activeEngineRequest = {
+
+                            resolve:
+                                result => {
+
+                                    engineCache.set(
+                                        cacheKey,
+                                        result
+                                    );
+
+                                    resolve(
+                                        result
+                                    );
+                                },
+
+                            reject:
+                                reject,
+
+                            evaluation:
+                                null,
+
+                            depth:
+                                0,
+
+                            pv:
+                                ""
+                        };
+
+                        stockfish.postMessage(
+                            `position fen ${fen}`
+                        );
+
+                        stockfish.postMessage(
+                            `go depth ${depth}`
+                        );
+                    }
+                );
+            }
+        );
+}
+
+// ======================================================
+// FORMAT ENGINE SCORE
+// ======================================================
+
+function formatEngineScore(
+    evaluation,
+    fen
+) {
+
+    if (!evaluation) {
+        return "Calculating...";
+    }
+
+    let value =
+        Number(
+            evaluation.value
+        );
+
+    // UCI score is from side-to-move perspective.
+    if (
+        fen.split(" ")[1] === "b"
+    ) {
+
+        value =
+            -value;
+    }
+
+    // Mate
+    if (
+        evaluation.type ===
+        "mate"
+    ) {
+
+        if (
+            value > 0
+        ) {
+
+            return `M White in ${Math.abs(value)}`;
+
+        } else {
+
+            return `M Black in ${Math.abs(value)}`;
+        }
+    }
+
+    const pawns =
+        value / 100;
+
+    if (
+        pawns >= 0
+    ) {
+
+        return `+${pawns.toFixed(2)}`;
+    }
+
+    return pawns.toFixed(2);
+}
+
+// ======================================================
+// UCI → SAN
+// ======================================================
+
+function convertBestMoveToSan(
+    fen,
+    uciMove
+) {
+
+    if (
+        !uciMove ||
+        uciMove === "(none)"
+    ) {
+
+        return "—";
+    }
+
+    try {
+
+        const chess =
+            new Chess();
+
+        if (
+            !chess.load(
+                fen
+            )
+        ) {
+
+            return uciMove;
+        }
+
+        const from =
+            uciMove.substring(
+                0,
+                2
+            );
+
+        const to =
+            uciMove.substring(
+                2,
+                4
+            );
+
+        const promotion =
+            uciMove.length >= 5
+                ? uciMove[4]
+                : undefined;
+
+        const move =
+            chess.move({
+
+                from:
+                    from,
+
+                to:
+                    to,
+
+                promotion:
+                    promotion
+            });
+
+        return move
+            ? move.san
+            : uciMove;
+
+    } catch (error) {
+
+        console.error(
+            "UCI to SAN error:",
+            error
+        );
+
+        return uciMove;
+    }
+}
+
+// ======================================================
+// PV → SAN
+// ======================================================
+
+function convertPvToSan(
+    fen,
+    pv
+) {
+
+    if (!pv) {
+        return "—";
+    }
+
+    try {
+
+        const chess =
+            new Chess();
+
+        if (
+            !chess.load(
+                fen
+            )
+        ) {
+
+            return pv;
+        }
+
+        const uciMoves =
+            pv.split(/\s+/);
+
+        const sanMoves = [];
+
+        for (
+            let i = 0;
+            i < uciMoves.length;
+            i++
+        ) {
+
+            const uci =
+                uciMoves[i];
+
+            if (
+                uci.length < 4
+            ) {
+
+                break;
+            }
+
+            const from =
+                uci.substring(
+                    0,
+                    2
+                );
+
+            const to =
+                uci.substring(
+                    2,
+                    4
+                );
+
+            const promotion =
+                uci.length >= 5
+                    ? uci[4]
+                    : undefined;
+
+            const move =
+                chess.move({
+
+                    from:
+                        from,
+
+                    to:
+                        to,
+
+                    promotion:
+                        promotion
+                });
+
+            if (!move) {
+                break;
+            }
+
+            sanMoves.push(
+                move.san
+            );
+        }
+
+        return sanMoves.length
+            ? sanMoves.join(" ")
+            : pv;
+
+    } catch (error) {
+
+        console.error(
+            "PV conversion error:",
+            error
+        );
+
+        return pv;
+    }
+}
