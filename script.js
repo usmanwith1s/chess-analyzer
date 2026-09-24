@@ -678,10 +678,85 @@ function renderAnalyzer() {
 
                     </div>
 
-                    <div
-                        id="ca-status"
-                        class="ca-status">
-                    </div>
+                  <div
+    id="ca-status"
+    class="ca-status">
+</div>
+
+<div style="margin-top: 18px;">
+
+    <button
+        id="ca-engine-button"
+        class="ca-control">
+        🧠 Analyze Position
+    </button>
+
+</div>
+
+<div
+    class="ca-current-move"
+    style="margin-top: 14px;">
+
+    <div class="ca-current-move-label">
+        Stockfish Evaluation
+    </div>
+
+    <div
+        id="ca-engine-evaluation"
+        class="ca-current-move-value">
+        —
+    </div>
+
+</div>
+
+<div class="ca-fen-box">
+
+    <span class="ca-fen-label">
+        Best Move
+    </span>
+
+    <code
+        id="ca-engine-best"
+        class="ca-fen">
+        —
+    </code>
+
+</div>
+
+<div class="ca-fen-box">
+
+    <span class="ca-fen-label">
+        Depth
+    </span>
+
+    <code
+        id="ca-engine-depth"
+        class="ca-fen">
+        —
+    </code>
+
+</div>
+
+<div class="ca-fen-box">
+
+    <span class="ca-fen-label">
+        Principal Variation
+    </span>
+
+    <code
+        id="ca-engine-pv"
+        class="ca-fen">
+        —
+    </code>
+
+</div>
+
+<div
+    id="ca-engine-status"
+    class="ca-status"
+    style="margin-top: 14px;">
+    Stockfish is ready to analyze a position.
+</div>
 
                 </div>
 
